@@ -1,0 +1,57 @@
+"use client";
+
+import { useState } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Loader2 } from "lucide-react";
+
+interface Props {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  userId?: string;
+  userName?: string;
+  onUpdated?: () => void;
+}
+
+export default function DeactivateUserModal({ open, onOpenChange, userId, userName, onUpdated }: Props) {
+  const [loading, setLoading] = useState(false);
+
+  const handleDeactivate = async () => {
+    if (!userId) return;
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin/usermanagement/deactivate-user", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "เกิดข้อผิดพลาด");
+      onUpdated?.();
+      onOpenChange(false);
+    } catch (err: any) {
+      alert(err.message || "ไม่สามารถปิดใช้งานผู้ใช้ได้");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>ยืนยันการปิดใช้งานผู้ใช้</DialogTitle>
+        </DialogHeader>
+        <p>คุณแน่ใจหรือไม่ว่าต้องการปิดใช้งานผู้ใช้ <strong>{userName}</strong> ?</p>
+        <DialogFooter className="gap-2 mt-4">
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
+            ยกเลิก
+          </Button>
+          <Button className="bg-red-600 hover:bg-red-700" onClick={handleDeactivate} disabled={loading}>
+            {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : "ปิดใช้งาน"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
