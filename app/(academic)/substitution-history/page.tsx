@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import AcademicSidebar from "@/components/academic/sidebar";
+import { PageContainer, PageHeader } from "@/components/shell/Page";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Pagination from "@/components/shared/Pagination";
@@ -31,18 +31,15 @@ export default function SubstitutionHistoryPage() {
   const list = usePagedQuery<Item>("/api/academic/substitution-history", params, 10, ready);
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      <AcademicSidebar />
-
-      <main className="flex-1 p-4 space-y-4 md:p-6">
-        <h1 className="text-xl font-semibold">ประวัติการสอนแทน</h1>
+    <PageContainer>
+      <PageHeader title="ประวัติการสอนแทน" description="ค้นหาด้วยเลขใบลา หรือช่วงวันที่" />
 
         <form
           onSubmit={(e) => {
             e.preventDefault();
             setApplied({ ...draft });
           }}
-          className="p-3 space-y-3 bg-white border rounded-lg"
+          className="p-3 space-y-3 bg-white border shadow-sm sm:p-4 rounded-xl"
         >
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div className="space-y-1">
@@ -60,10 +57,11 @@ export default function SubstitutionHistoryPage() {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button type="submit" disabled={list.loading}>ค้นหา</Button>
+            <Button type="submit" disabled={list.loading} className="flex-1 h-10 sm:flex-none">ค้นหา</Button>
             <Button
               type="button"
               variant="outline"
+              className="flex-1 h-10 sm:flex-none"
               onClick={() => {
                 setDraft(EMPTY);
                 setApplied(null);
@@ -74,10 +72,36 @@ export default function SubstitutionHistoryPage() {
           </div>
         </form>
 
-        <div className="overflow-hidden bg-white border rounded-lg">
-          <div className="px-3 py-2 font-medium border-b bg-gray-50">ผลการค้นหา</div>
-          <div className="overflow-auto">
-            <table className="min-w-[900px] w-full text-sm">
+        <div className="overflow-hidden bg-white border shadow-sm rounded-xl">
+          <div className="px-4 py-3 font-medium border-b bg-gray-50">ผลการค้นหา{ready && !list.loading ? ` (${list.total} รายการ)` : ""}</div>
+          {/* มือถือ: การ์ด */}
+          <div className="md:hidden">
+            {!ready ? (
+              <p className="px-4 py-8 text-sm text-center text-gray-500">ระบุเลขใบลา หรือช่วงวันที่ แล้วกด “ค้นหา”</p>
+            ) : list.loading ? (
+              <p className="px-4 py-8 text-sm text-center text-gray-500">กำลังโหลด...</p>
+            ) : list.error ? (
+              <p className="px-4 py-8 text-sm text-center text-red-600">{list.error}</p>
+            ) : list.rows.length === 0 ? (
+              <p className="px-4 py-8 text-sm text-center text-gray-500">ไม่พบข้อมูล</p>
+            ) : (
+              <ul className="divide-y">
+                {list.rows.map((it) => (
+                  <li key={it.id} className="p-4 space-y-1 text-sm">
+                    <div className="flex justify-between gap-2 font-medium">
+                      <span>{thaiDate(it.date, true)}</span>
+                      <span className="text-gray-600">{it.period ? `คาบ ${it.period}` : ""} {it.time}</span>
+                    </div>
+                    <div className="text-gray-700">{it.subject || "-"} · {it.classroom || "-"}</div>
+                    <div className="text-gray-600">ผู้ลา: {it.leaver || "-"}</div>
+                    <div className="text-green-700">ผู้สอนแทน: {it.substitute || "-"}</div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="hidden overflow-auto md:block">
+            <table className="w-full text-sm min-w-[760px]">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-3 py-2 text-left">วันที่</th>
@@ -116,7 +140,6 @@ export default function SubstitutionHistoryPage() {
           </div>
           {ready && <Pagination page={list.page} totalPages={list.totalPages} onChange={list.setPage} total={list.total} />}
         </div>
-      </main>
-    </div>
+    </PageContainer>
   );
 }

@@ -19,7 +19,7 @@ type Slot = {
   substituteUserId: string | null;
   substituteName: string | null;
 };
-type Day = { date: string; weekday: number | null; slots: Slot[] };
+type Day = { date: string; weekday: number | null; holiday: string | null; slots: Slot[] };
 type Detail = {
   leave: LeaveItem;
   isTeacher: boolean;
@@ -30,6 +30,9 @@ type Detail = {
 
 const WEEKDAY = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
 const weekdayOf = (iso: string) => WEEKDAY[new Date(`${iso}T00:00:00Z`).getUTCDay()];
+/** เหตุผลที่วันนั้นไม่มีคาบต้องสอนแทน */
+const noSlotReason = (d: Day) =>
+  d.holiday ? `วันหยุด: ${d.holiday}` : d.weekday === null ? "วันหยุดสุดสัปดาห์" : "ไม่มีคาบเรียนในช่วงที่ลา";
 
 /** วางแผนสอนแทนทุกคาบในช่วงลา — โหลดข้อมูลทั้งหมดจาก endpoint เดียว */
 export default function PlanSubstituteModal({
@@ -93,7 +96,7 @@ export default function PlanSubstituteModal({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-5xl max-h-[85vh] overflow-hidden flex flex-col">
+        <DialogContent className="sm:max-w-5xl max-h-[90dvh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex flex-wrap items-center gap-2">
               <span>วางแผนสอนแทน:</span>
@@ -107,7 +110,45 @@ export default function PlanSubstituteModal({
             </DialogTitle>
           </DialogHeader>
 
-          <div className="flex-1 overflow-auto border rounded-md">
+          {/* มือถือ: การ์ดรายวัน */}
+          <div className="flex-1 space-y-3 overflow-y-auto md:hidden">
+            {loading && <p className="py-6 text-center text-muted-foreground">กำลังโหลดตาราง...</p>}
+            {!loading && error && <p className="py-6 text-center text-red-600">{error}</p>}
+            {!loading && detail && !detail.isTeacher && <p className="py-6 text-center text-muted-foreground">ผู้ลาไม่ได้เป็นครู จึงไม่มีตารางสอน</p>}
+            {!loading &&
+              detail?.isTeacher &&
+              detail.schedule.map((d) => (
+                <div key={d.date} className="border rounded-lg">
+                  <div className="px-3 py-2 border-b bg-muted/40">
+                    <div className="font-semibold">{thaiDate(d.date)}</div>
+                    <div className="text-xs text-muted-foreground">วัน{weekdayOf(d.date)}</div>
+                  </div>
+                  {d.slots.length === 0 ? (
+                    <p className={`px-3 py-3 text-sm ${d.holiday ? "text-rose-600" : "text-muted-foreground"}`}>{noSlotReason(d)}</p>
+                  ) : (
+                    <ul className="divide-y">
+                      {d.slots.map((s) => (
+                        <li key={s.teachingScheduleId} className="p-3 space-y-2 text-sm">
+                          <div className="flex justify-between gap-2">
+                            <span className="font-medium">คาบ {s.period} <span className="font-normal text-muted-foreground">{s.time}</span></span>
+                          </div>
+                          <div className="text-muted-foreground">{s.subject} · {s.room}</div>
+                          {s.substituteUserId ? (
+                            <Badge variant="outline" className="text-green-700 border-green-300">ครูสอนแทน: {s.substituteName || "—"}</Badge>
+                          ) : (
+                            <Button size="sm" className="w-full h-10 text-white bg-blue-600 hover:bg-blue-700" onClick={() => setPicking({ dateISO: d.date, period: s.period, teachingScheduleId: s.teachingScheduleId })}>
+                              เลือกครูสอนแทน
+                            </Button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+          </div>
+
+          <div className="flex-1 hidden overflow-auto border rounded-md md:block">
             <table className="w-full text-sm">
               <thead className="sticky top-0 z-10 bg-muted">
                 <tr>
@@ -150,8 +191,8 @@ export default function PlanSubstituteModal({
                             <div className="font-semibold">{thaiDate(d.date)}</div>
                             <div className="text-xs text-muted-foreground">วัน{weekdayOf(d.date)}</div>
                           </td>
-                          <td colSpan={5} className="px-3 py-3 text-muted-foreground">
-                            {d.weekday === null ? "วันหยุดสุดสัปดาห์" : "ไม่มีคาบเรียนที่เกี่ยวข้อง"}
+                          <td colSpan={5} className={`px-3 py-3 ${d.holiday ? "text-rose-600" : "text-muted-foreground"}`}>
+                            {noSlotReason(d)}
                           </td>
                         </tr>
                       ) : (
@@ -195,8 +236,10 @@ export default function PlanSubstituteModal({
 
           <DialogFooter className="flex-col gap-3 pt-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-sm">
-              {progress && progress.required > 0 ? (
-                progress.complete ? (
+              {progress ? (
+                progress.required === 0 ? (
+                  <span className="text-muted-foreground">ไม่มีคาบที่ต้องจัดสอนแทนในช่วงลา</span>
+                ) : progress.complete ? (
                   <span className="text-green-600">✓ มอบหมายครบทุกคาบแล้ว ({progress.assigned}/{progress.required})</span>
                 ) : (
                   <span className="text-amber-700">
@@ -205,8 +248,8 @@ export default function PlanSubstituteModal({
                 )
               ) : null}
             </div>
-            <div className="flex justify-end gap-2">
-              {leave?.status_code === "approved" && progress?.complete && progress.required > 0 && (
+            <div className="flex justify-end gap-2 *:flex-1 sm:*:flex-none">
+              {leave?.status_code === "approved" && progress?.complete && (
                 <Button onClick={finish} disabled={finishing} className="text-white bg-green-600 hover:bg-green-700">
                   {finishing ? "กำลังบันทึก..." : "✓ เสร็จสิ้น"}
                 </Button>

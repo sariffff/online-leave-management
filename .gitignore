@@ -60,3 +60,6 @@ supabase/.branches/
 
 # ผลรันเทส E2E (มี id ข้อมูลจริง — ไม่ commit)
 tests/e2e/last-run.json
+tests/ui/screens/
+tests/ui/last-audit.json
+tests/ui/demo-output/

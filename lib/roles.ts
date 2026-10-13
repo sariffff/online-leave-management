@@ -17,3 +17,14 @@ export const ROLE_HOME: Record<RoleName, string> = {
   director: "/leave-approve",
   academic: "/leavetable",
 };
+
+/** ชื่อบทบาทภาษาไทยสำหรับแสดงผล */
+export const ROLE_LABEL: Record<RoleName, string> = {
+  admin: "ผู้ดูแลระบบ",
+  user: "บุคลากร",
+  supervisor: "ธุรการ",
+  director: "ผู้อำนวยการ",
+  academic: "วิชาการ",
+};
+
+export const roleLabel = (name: string) => ROLE_LABEL[name as RoleName] ?? name;

@@ -79,20 +79,20 @@ export default function EmployeeLeaveDetail({ employeeId, onBack }: { employeeId
   }
 
   return (
-    <div className="container p-6 mx-auto space-y-6">
-      <div className="flex items-center gap-3">
-        <Button variant="outline" size="icon" onClick={onBack} aria-label="ย้อนกลับ">
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex items-start gap-3">
+        <Button variant="outline" size="icon" className="shrink-0" onClick={onBack} aria-label="ย้อนกลับ">
           <ArrowLeft className="w-4 h-4" />
         </Button>
-        <div>
-          <h2 className="text-2xl font-bold">สถิติการลาของ {name}</h2>
+        <div className="min-w-0">
+          <h2 className="text-xl font-bold sm:text-2xl">สถิติการลาของ {name}</h2>
           <p className="mt-1 text-sm text-slate-600">ปีงบประมาณปัจจุบัน • ใบลาทั้งหมด {rows.length} รายการ</p>
         </div>
       </div>
 
       {error && <div className="p-3 text-sm text-red-700 border border-red-200 rounded-lg bg-red-50">{error}</div>}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
         {usedTypes.length ? (
           usedTypes.slice(0, 6).map((q) => {
             const pct = q.total ? Math.min(100, Math.round((q.used / q.total) * 100)) : 0;
@@ -113,7 +113,7 @@ export default function EmployeeLeaveDetail({ employeeId, onBack }: { employeeId
             );
           })
         ) : (
-          <Card className="md:col-span-3">
+          <Card className="sm:col-span-2 lg:col-span-3">
             <CardContent className="py-8 text-center text-slate-500">ยังไม่มีการใช้สิทธิ์ลาในปีงบประมาณนี้</CardContent>
           </Card>
         )}
@@ -161,7 +161,7 @@ export default function EmployeeLeaveDetail({ employeeId, onBack }: { employeeId
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+            <table className="w-full text-sm border-collapse min-w-[480px]">
               <thead>
                 <tr className="border-b-2 border-slate-200">
                   <th className="p-3 text-left">ประเภท</th>
@@ -175,7 +175,7 @@ export default function EmployeeLeaveDetail({ employeeId, onBack }: { employeeId
                   <tr key={r.id} className="border-b border-slate-100">
                     <td className="p-3">{r.leaveType}</td>
                     <td className="p-3">
-                      {thaiDate(r.startDate, true)} - {thaiDate(r.endDate, true)}
+                      {r.startDate === r.endDate ? thaiDate(r.startDate, true) : `${thaiDate(r.startDate, true)} – ${thaiDate(r.endDate, true)}`}
                     </td>
                     <td className="p-3 text-center">{r.totalDays}</td>
                     <td className="p-3 text-center">

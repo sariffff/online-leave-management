@@ -8,13 +8,13 @@ const fmtSize = (n: number) => (n < 1024 ? `${n} bytes` : n < 1024 * 1024 ? `${(
 
 function Section({ title, icon, step, onEdit, children }: { title: string; icon?: React.ReactNode; step: number; onEdit: (s: number) => void; children: React.ReactNode }) {
   return (
-    <div className="p-6 border border-gray-200 rounded-lg">
-      <div className="flex items-center justify-between mb-4">
+    <div className="p-4 border border-gray-200 rounded-lg sm:p-6">
+      <div className="flex items-center justify-between gap-2 mb-4">
         <h4 className="flex items-center font-semibold text-gray-900">
           {icon}
           {title}
         </h4>
-        <button onClick={() => onEdit(step)} className="flex items-center text-sm text-blue-600 hover:text-blue-700">
+        <button onClick={() => onEdit(step)} className="flex items-center px-2 py-1 text-sm text-blue-600 rounded-md shrink-0 hover:text-blue-700 hover:bg-blue-50">
           <Edit className="w-4 h-4 mr-1" />
           แก้ไข
         </button>
@@ -44,21 +44,21 @@ export default function Step3ReviewForm({
   const halfText = (t: string) => (t === "เต็มวัน" ? "ลาเต็มวัน" : `ลา${t}`);
 
   return (
-    <div className="p-8 bg-white shadow-sm rounded-xl">
-      <div className="flex items-center justify-between mb-8">
+    <div className="p-4 bg-white border shadow-sm sm:p-8 rounded-xl">
+      <div className="flex flex-col gap-3 mb-6 sm:mb-8 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h3 className="text-xl font-bold text-gray-900">ตรวจสอบข้อมูลและยืนยัน</h3>
+          <h2 className="text-lg font-bold text-gray-900 sm:text-xl">ตรวจสอบข้อมูลและยืนยัน</h2>
           <p className="mt-1 text-sm text-gray-600">โปรดตรวจสอบข้อมูลก่อนส่งใบลา</p>
         </div>
-        <div className="flex items-center px-4 py-2 rounded-lg bg-blue-50">
+        <div className="flex items-center self-start px-4 py-2 rounded-lg bg-blue-50">
           <CheckCircle className="w-5 h-5 mr-2 text-blue-600" />
           <span className="text-sm font-medium text-blue-600">พร้อมส่งใบลา</span>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-8">
         <div className="space-y-4 lg:col-span-1">
-          <div className="p-6 border border-gray-200 rounded-lg bg-gray-50">
+          <div className="p-4 border border-gray-200 rounded-lg sm:p-6 bg-gray-50">
             <h4 className="flex items-center mb-4 font-semibold text-gray-900">
               <User className="w-5 h-5 mr-2 text-gray-600" />
               ผู้ยื่นคำขอ
@@ -66,7 +66,7 @@ export default function Step3ReviewForm({
             <p className="text-sm font-medium text-gray-900">{applicantName || "กำลังโหลด..."}</p>
           </div>
 
-          <div className="p-6 border border-gray-200 rounded-lg bg-green-50">
+          <div className="p-4 border border-gray-200 rounded-lg sm:p-6 bg-green-50">
             <h4 className="flex items-center mb-4 font-semibold text-gray-900">
               <Calendar className="w-5 h-5 mr-2 text-green-600" />
               สรุปการลา
@@ -111,8 +111,8 @@ export default function Step3ReviewForm({
                 {formData.attachments.map((file, i) => (
                   <div key={`${file.name}-${i}`} className="flex items-center p-3 border border-gray-200 rounded-lg bg-gray-50">
                     <FileText className="w-5 h-5 mr-3 text-gray-500" />
-                    <div>
-                      <p className="font-medium text-gray-900">{file.name}</p>
+                    <div className="min-w-0">
+                      <p className="font-medium text-gray-900 truncate">{file.name}</p>
                       <p className="text-sm text-gray-500">{fmtSize(file.size)}</p>
                     </div>
                   </div>
@@ -123,16 +123,16 @@ export default function Step3ReviewForm({
         </div>
       </div>
 
-      <div className="flex items-center justify-between pt-6 mt-8 border-t border-gray-200">
-        <button onClick={onPrev} disabled={isSubmitting} className="px-6 py-2 text-gray-700 transition-colors border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">
+      <div className="flex flex-col-reverse gap-3 pt-6 mt-8 border-t border-gray-200 sm:flex-row sm:items-center sm:justify-between">
+        <button onClick={onPrev} disabled={isSubmitting} className="h-11 px-6 text-gray-700 transition-colors border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">
           ย้อนกลับ
         </button>
-        <div className="flex items-center space-x-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
           <div className="flex items-center text-sm text-gray-600">
             <AlertCircle className="w-4 h-4 mr-2" />
             กรุณาตรวจสอบข้อมูลให้ถูกต้องก่อนส่ง
           </div>
-          <button onClick={onSubmit} disabled={isSubmitting} className="flex items-center px-8 py-3 text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50">
+          <button onClick={onSubmit} disabled={isSubmitting} className="flex items-center justify-center h-11 px-8 text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50">
             <Send className="w-4 h-4 mr-2" />
             {isSubmitting ? "กำลังส่ง..." : "ยืนยันส่งใบลา"}
           </button>

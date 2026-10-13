@@ -17,8 +17,9 @@ import { apiFetch } from "@/lib/client/api";
 import { useHolidays } from "@/lib/client/useHolidays";
 import { countLeaveDays, isNonWorkingISO } from "@/lib/leave/days";
 import { HALF_OPTIONS, OWNER_EDITABLE, normalizeHalf, type HalfType } from "@/lib/leave/status";
+import { thaiDate } from "@/lib/format";
 
-const selectCls = "w-full h-9 px-3 border rounded-md text-sm";
+const selectCls = "w-full h-10 px-3 bg-white border rounded-md text-sm";
 
 /** ดูรายละเอียด / แก้ไข / ลบ ใบลาของตัวเอง (แก้ไขได้เฉพาะ pending และ failed) */
 export default function LeaveRequestModal({
@@ -121,11 +122,9 @@ export default function LeaveRequestModal({
     }
   }
 
-  const today = new Date().toISOString().slice(0, 10);
-
   return (
     <Dialog open={open} onOpenChange={(v) => !v && !saving && !removing && onClose()}>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-3xl max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>รายละเอียดใบลา</DialogTitle>
           <DialogDescription>ดูรายละเอียด / สร้าง PDF / แก้ไข / ลบ</DialogDescription>
@@ -150,7 +149,7 @@ export default function LeaveRequestModal({
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div>
                       <Label className="block mb-1">วันที่เริ่มลา</Label>
-                      <Input type="date" value={form.startDate} min={today} onChange={(e) => pickDate("startDate", e.target.value, e.currentTarget)} />
+                      <Input type="date" className="h-10" value={form.startDate} onChange={(e) => pickDate("startDate", e.target.value, e.currentTarget)} />
                     </div>
                     <div>
                       <Label className="block mb-1">ช่วงเวลาเริ่ม</Label>
@@ -160,7 +159,7 @@ export default function LeaveRequestModal({
                     </div>
                     <div>
                       <Label className="block mb-1">วันที่สิ้นสุด</Label>
-                      <Input type="date" value={form.endDate} min={form.startDate || today} onChange={(e) => pickDate("endDate", e.target.value, e.currentTarget)} />
+                      <Input type="date" className="h-10" value={form.endDate} min={form.startDate || undefined} onChange={(e) => pickDate("endDate", e.target.value, e.currentTarget)} />
                     </div>
                     <div>
                       <Label className="block mb-1">ช่วงเวลาสิ้นสุด</Label>
@@ -186,7 +185,7 @@ export default function LeaveRequestModal({
                       <ul className="space-y-1 text-sm text-yellow-700">
                         {excluded.map((d) => (
                           <li key={d.date}>
-                            <span className="font-bold">{d.date}</span> — {d.name}
+                            <span className="font-bold">{thaiDate(d.date, true)}</span> — {d.name}
                           </li>
                         ))}
                       </ul>
@@ -210,7 +209,7 @@ export default function LeaveRequestModal({
           </Tabs>
         )}
 
-        <DialogFooter className="gap-2 sm:gap-3">
+        <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:gap-3">
           {item && <GeneratePdfButton item={item} />}
           {editable && (
             <Button variant="destructive" disabled={removing || saving} onClick={remove}>

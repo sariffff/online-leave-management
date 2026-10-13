@@ -46,7 +46,8 @@ export type ScheduleSlot = {
   substituteName: string | null;
 };
 
-export type ScheduleDay = { date: string; weekday: number | null; slots: ScheduleSlot[] };
+/** weekday: จันทร์=1…ศุกร์=5 หรือ null (เสาร์-อาทิตย์) · holiday: ชื่อวันหยุด (ไม่ต้องจัดสอนแทน) */
+export type ScheduleDay = { date: string; weekday: number | null; holiday: string | null; slots: ScheduleSlot[] };
 
 /**
  * คาบที่ต้องหาครูสอนแทนตามใบลา พร้อมสถานะสอนแทนของแต่ละคาบ (ใช้ query รวม ไม่วน N+1)
@@ -116,8 +117,9 @@ export async function scheduleForRange(teacherId: number, leave: LeaveSpan): Pro
   }
 
   return dates.map((date) => {
-    const dow = holidays.has(date) ? null : teachingDow(date);
-    const rowsOfDay = (dow ? byDow.get(dow) ?? [] : []).filter((r) =>
+    const dow = teachingDow(date);
+    const holiday = holidays.get(date) ?? null;
+    const rowsOfDay = (dow && !holiday ? byDow.get(dow) ?? [] : []).filter((r) =>
       leaveCoversPeriod(leave, date, periodPart(r.period_number ?? 0, r.start_time))
     );
     const slots: ScheduleSlot[] = rowsOfDay.map((r) => {
@@ -134,7 +136,7 @@ export async function scheduleForRange(teacherId: number, leave: LeaveSpan): Pro
         substituteName: sub?.name ?? null,
       };
     });
-    return { date, weekday: dow, slots };
+    return { date, weekday: dow, holiday, slots };
   });
 }
 

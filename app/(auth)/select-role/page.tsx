@@ -17,7 +17,7 @@ export default async function SelectRolePage() {
   const { data } = await g.supa.from("users").select("prename, name, surname").eq("user_id", g.user.id).maybeSingle();
 
   return (
-    <main className="min-h-screen bg-gray-100">
+    <main className="min-h-full bg-gray-100">
       <div className="p-4">
         <SelectRole
           roleOptions={g.roles.map((r) => ({ id: String(r.id), name: r.name }))}

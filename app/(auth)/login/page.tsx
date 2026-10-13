@@ -1,9 +1,8 @@
-import React from 'react'
-import LoginForm from '@/components/auth/login'
+import LoginForm from "@/components/auth/login";
 
 export default function LoginPage() {
   return (
-    <main className="min-h-screen bg-gray-100 flex items-center justify-center px-4">
+    <main className="flex items-center justify-center min-h-full px-4 py-8 bg-gray-100">
       <LoginForm />
     </main>
   );

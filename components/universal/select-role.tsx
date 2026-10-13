@@ -1,92 +1,93 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { CalendarCheck, ChevronRight, ClipboardCheck, FileText, GraduationCap, Loader2, ShieldCheck, type LucideIcon } from "lucide-react";
 import { apiFetch } from "@/lib/client/api";
 
 type RoleOption = { id: string; name: string };
 type Profile = { email?: string; fullName?: string };
 
-const ROLE_TH: Record<string, string> = {
-  admin: "ผู้ดูแลระบบ",
-  user: "บุคลากรทั่วไป (ยื่นใบลา)",
-  supervisor: "ฝ่ายธุรการ (ตรวจสอบใบลา)",
-  director: "ผู้อำนวยการ (อนุมัติใบลา)",
-  academic: "ฝ่ายวิชาการ (จัดสอนแทน)",
+const ROLE_INFO: Record<string, { title: string; desc: string; icon: LucideIcon; color: string }> = {
+  user: { title: "บุคลากร", desc: "ยื่นใบลา ดูประวัติและวันลาคงเหลือ", icon: FileText, color: "bg-blue-100 text-blue-700" },
+  supervisor: { title: "ฝ่ายธุรการ", desc: "ตรวจสอบใบลา (ผ่าน / ไม่ผ่าน)", icon: ClipboardCheck, color: "bg-amber-100 text-amber-700" },
+  director: { title: "ผู้อำนวยการ", desc: "อนุมัติใบลา ดูสถิติ", icon: CalendarCheck, color: "bg-emerald-100 text-emerald-700" },
+  academic: { title: "ฝ่ายวิชาการ", desc: "จัดครูสอนแทน ดูตารางสอน", icon: GraduationCap, color: "bg-indigo-100 text-indigo-700" },
+  admin: { title: "ผู้ดูแลระบบ", desc: "จัดการบุคลากร ข้อมูลหลัก ตารางสอน วันหยุด", icon: ShieldCheck, color: "bg-purple-100 text-purple-700" },
 };
 
+/** เลือกบทบาทที่จะใช้งาน — กดการ์ดแล้วไปต่อทันที (มีบทบาทเดียวจะไปต่อให้อัตโนมัติ) */
 export default function SelectRole({ roleOptions, profile }: { roleOptions: RoleOption[]; profile?: Profile }) {
   const router = useRouter();
-  const [selected, setSelected] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [submitting, setSubmitting] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const auto = useRef(false);
 
-  // มีบทบาทเดียว → เลือกให้อัตโนมัติ
-  useEffect(() => {
-    if (!selected && roleOptions.length === 1) setSelected(roleOptions[0].id);
-  }, [roleOptions, selected]);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!selected) return setError("โปรดเลือกสิทธิ์ก่อน");
+  async function choose(id: string) {
     setError("");
-    setSubmitting(true);
+    setSubmitting(id);
     try {
-      const res = await apiFetch<{ home: string }>("/api/auth/set-role", { method: "POST", json: { roleId: Number(selected) } });
+      const res = await apiFetch<{ home: string }>("/api/auth/set-role", { method: "POST", json: { roleId: Number(id) } });
       router.push(res.home || "/");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "เกิดข้อผิดพลาด");
-      setSubmitting(false);
+      setSubmitting(null);
     }
   }
 
+  useEffect(() => {
+    if (!auto.current && roleOptions.length === 1) {
+      auto.current = true;
+      choose(roleOptions[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roleOptions]);
+
   return (
-    <div className="max-w-3xl p-4 mx-auto mt-8 space-y-8 bg-white rounded-lg shadow sm:p-7">
-      <section className="bg-blue-200 border rounded">
-        <div className="px-4 py-2 font-semibold">Profile</div>
-        <div className="px-4 py-3 space-y-2 bg-white">
-          <p><span className="font-medium">ชื่อ - นามสกุล :</span> {profile?.fullName || "-"}</p>
-          <p><span className="font-medium">Email :</span> {profile?.email || "-"}</p>
-        </div>
-      </section>
+    <div className="w-full max-w-2xl px-4 py-6 mx-auto space-y-6 sm:py-10">
+      <div className="text-center">
+        <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">เลือกบทบาทเพื่อเข้าใช้งาน</h1>
+        <p className="mt-1 text-sm text-gray-600">
+          {profile?.fullName || "-"}
+          {profile?.email ? <span className="block text-gray-500 break-all">{profile.email}</span> : null}
+        </p>
+      </div>
 
-      <section className="bg-blue-200 border rounded">
-        <div className="px-4 py-2 font-semibold">สิทธิ์เข้าใช้งานระบบ</div>
-        <div className="px-4 py-4 space-y-4 text-sm bg-white sm:text-base">
-          {roleOptions.length === 0 ? (
-            <p className="text-red-600">บัญชีนี้ยังไม่ได้รับสิทธิ์ใด ๆ กรุณาติดต่อผู้ดูแลระบบ</p>
-          ) : (
-            <form onSubmit={submit}>
-              <label htmlFor="role" className="block mb-1 font-medium">เลือกสิทธิ์เข้าใช้งาน</label>
-              <select
-                id="role"
-                className="w-full px-3 py-2 bg-gray-100 border rounded sm:w-1/2"
-                value={selected}
-                onChange={(e) => setSelected(e.target.value)}
-                disabled={submitting}
-              >
-                <option value="">-- กรุณาเลือกสิทธิ์ --</option>
-                {roleOptions.map((r) => (
-                  <option key={r.id} value={r.id}>{ROLE_TH[r.name] ?? r.name}</option>
-                ))}
-              </select>
-
-              {error && <p className="mt-2 text-red-600">{error}</p>}
-
-              <div className="pt-4 text-center">
+      {roleOptions.length === 0 ? (
+        <p className="p-4 text-center text-red-700 border border-red-200 rounded-xl bg-red-50">
+          บัญชีนี้ยังไม่ได้รับสิทธิ์ใด ๆ กรุณาติดต่อผู้ดูแลระบบ
+        </p>
+      ) : (
+        <ul className="grid gap-3 sm:grid-cols-2">
+          {roleOptions.map((r) => {
+            const info = ROLE_INFO[r.name] ?? { title: r.name, desc: "", icon: FileText, color: "bg-gray-100 text-gray-700" };
+            const Icon = info.icon;
+            const busy = submitting === r.id;
+            return (
+              <li key={r.id}>
                 <button
-                  type="submit"
-                  disabled={submitting || !selected}
-                  className="px-6 py-2 font-semibold text-black transition bg-green-300 rounded hover:bg-green-400 disabled:opacity-60 disabled:cursor-not-allowed"
+                  type="button"
+                  onClick={() => choose(r.id)}
+                  disabled={!!submitting}
+                  className="flex items-center w-full gap-4 p-4 text-left transition bg-white border border-gray-200 shadow-sm rounded-xl hover:border-blue-400 hover:shadow-md disabled:opacity-60"
                 >
-                  {submitting ? "กำลังตั้งค่า..." : "ดำเนินการต่อ"}
+                  <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${info.color}`}>
+                    <Icon className="w-6 h-6" />
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block font-semibold text-gray-900">{info.title}</span>
+                    <span className="block text-sm text-gray-600">{info.desc}</span>
+                  </span>
+                  {busy ? <Loader2 className="w-5 h-5 text-blue-600 animate-spin shrink-0" /> : <ChevronRight className="w-5 h-5 text-gray-400 shrink-0" />}
                 </button>
-              </div>
-            </form>
-          )}
-        </div>
-      </section>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {error && <p role="alert" className="text-sm text-center text-red-600">{error}</p>}
     </div>
   );
 }
