@@ -1,4 +1,3 @@
-// app/user/dashboard/page.tsx
 "use client";
 
 import { useEffect, useRef, useMemo, useState } from "react";
@@ -12,7 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Clock, CheckCircle2, XCircle, Filter, ChevronDown } from "lucide-react";
-import UserSidebar from "@/components/user/UserSidebar";
+import { PageContainer, PageHeader } from "@/components/shell/Page";
+import { apiFetch } from "@/lib/client/api";
 
 export type LeaveRow = {
   id: string;
@@ -124,7 +124,7 @@ export default function UserDashboardClient({ initialYear, initialRows }: { init
     loadedKey.current = key;
     const fetchData = async () => {
       try {
-        setData(prev => ({ ...prev, loading: true }));
+        setData(prev => ({ ...prev, loading: true, error: null }));
 
         const params = new URLSearchParams();
         if (mode === "fiscal") {
@@ -135,10 +135,7 @@ export default function UserDashboardClient({ initialYear, initialRows }: { init
           if (filters.month > 0) params.set("month", String(filters.month).padStart(2, "0"));
         }
 
-        const response = await fetch(`${API}?${params.toString()}`, { cache: "no-store" });
-        if (!response.ok) throw new Error(`API Error: ${response.status}`);
-
-        const result = await response.json();
+        const result = await apiFetch<{ data?: LeaveRow[] }>(`${API}?${params.toString()}`);
         const rows: LeaveRow[] = result?.data ?? [];
 
         setData({
@@ -154,6 +151,14 @@ export default function UserDashboardClient({ initialYear, initialRows }: { init
 
     fetchData();
   }, [mode, filters.year, filters.month, filters.fy, filters.fmonth]);
+
+  // ตัวเลือกประเภทที่ไม่มีในข้อมูลชุดใหม่ ให้ตัดออก
+  useEffect(() => {
+    setFilters((prev) => {
+      const keep = prev.selectedTypes.filter((t) => data.types.includes(t));
+      return keep.length === prev.selectedTypes.length ? prev : { ...prev, selectedTypes: keep };
+    });
+  }, [data.types]);
 
   // Filter data based on selected types
   const filteredRows = useMemo(() => {
@@ -250,70 +255,31 @@ export default function UserDashboardClient({ initialYear, initialRows }: { init
     return { byType, monthlyTrend, statusPieData, totalDays: +totalDays.toFixed(1), statusStats };
   }, [filteredRows, data.types, filters.year, filters.month, filters.fy, filters.fmonth, mode]);
 
-  // Loading
-  if (data.loading) {
-    return (
-      <div className="flex h-screen bg-gray-50">
-        <UserSidebar />
-        <div className="flex items-center justify-center flex-1">
-          <div className="text-center">
-            <div className="w-12 h-12 mx-auto border-4 border-gray-200 rounded-full border-t-indigo-600 animate-spin" />
-            <p className="mt-4 font-medium text-gray-600">กำลังโหลดข้อมูล...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Error
-  if (data.error) {
-    return (
-      <div className="flex h-screen bg-gray-50">
-        <UserSidebar />
-        <div className="flex-1 p-6">
-          <div className="max-w-md p-6 mx-auto mt-20 border border-red-200 bg-red-50 rounded-xl">
-            <div className="flex items-center gap-3">
-              <XCircle className="w-6 h-6 text-red-500" />
-              <div>
-                <h3 className="font-semibold text-red-800">เกิดข้อผิดพลาด</h3>
-                <p className="mt-1 text-sm text-red-600">{data.error}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   // UI
   return (
-    <div className="flex h-screen bg-gray-50">
-      <UserSidebar />
-      <main className="flex-1 overflow-auto">
-        <div className="px-6 py-8">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h1 className="mb-2 text-3xl font-bold text-gray-900">แดชบอร์ดการลาของฉัน</h1>
-            </div>
+    <PageContainer>
+          <PageHeader title="แดชบอร์ดการลาของฉัน" description="สรุปจำนวนวันลาตามสถานะ ประเภท และเดือน" />
 
             {/* Controls */}
-            <div className="flex flex-wrap items-center gap-4">
+            <div className="grid grid-cols-2 gap-3 p-3 bg-white border shadow-sm sm:p-4 rounded-xl md:flex md:flex-wrap md:items-center">
               {/* Mode switch */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center col-span-2 gap-2">
                 <Button
+                  className="flex-1 md:flex-none"
                   variant={mode === "calendar" ? "default" : "outline"}
                   onClick={() => setMode("calendar")}
                 >ปีปฏิทิน</Button>
                 <Button
+                  className="flex-1 md:flex-none"
                   variant={mode === "fiscal" ? "default" : "outline"}
                   onClick={() => setMode("fiscal")}
                 >ปีงบประมาณ</Button>
               </div>
 
               {/* Leave Type Filter */}
-              <Popover>
+              <div className="col-span-2 md:col-span-1"><Popover>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" className="bg-white border-gray-200 shadow-sm">
+                  <Button variant="outline" className="w-full col-span-2 bg-white border-gray-200 shadow-sm md:w-auto">
                     <Filter className="w-4 h-4 mr-2" />
                     ประเภทการลา
                     {filters.selectedTypes.length > 0 && (
@@ -361,14 +327,14 @@ export default function UserDashboardClient({ initialYear, initialRows }: { init
                     )}
                   </div>
                 </PopoverContent>
-              </Popover>
+              </Popover></div>
 
               {/* Year/FY filter */}
               {mode === "calendar" ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-gray-600">ปี (พ.ศ.)</span>
+                <div className="flex flex-col gap-1 md:flex-row md:items-center md:gap-2">
+                  <span className="text-xs font-medium text-gray-600 md:text-sm">ปี (พ.ศ.)</span>
                   <Select value={String(filters.year)} onValueChange={(v) => setFilters(prev => ({ ...prev, year: Number(v) }))}>
-                    <SelectTrigger className="bg-white border-gray-200 shadow-sm w-36">
+                    <SelectTrigger className="w-full bg-white border-gray-200 shadow-sm md:w-36">
                       <SelectValue placeholder="เลือกปี" />
                     </SelectTrigger>
                     <SelectContent>
@@ -379,10 +345,10 @@ export default function UserDashboardClient({ initialYear, initialRows }: { init
                   </Select>
                 </div>
               ) : (
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-gray-600">ปีงบ (พ.ศ.)</span>
+                <div className="flex flex-col gap-1 md:flex-row md:items-center md:gap-2">
+                  <span className="text-xs font-medium text-gray-600 md:text-sm">ปีงบ (พ.ศ.)</span>
                   <Select value={String(filters.fy)} onValueChange={(v) => setFilters(prev => ({ ...prev, fy: Number(v) }))}>
-                    <SelectTrigger className="bg-white border-gray-200 shadow-sm w-36">
+                    <SelectTrigger className="w-full bg-white border-gray-200 shadow-sm md:w-36">
                       <SelectValue placeholder="เลือกปีงบ" />
                     </SelectTrigger>
                     <SelectContent>
@@ -396,10 +362,10 @@ export default function UserDashboardClient({ initialYear, initialRows }: { init
 
               {/* Month/FMonth filter */}
               {mode === "calendar" ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-gray-600">เดือน</span>
+                <div className="flex flex-col gap-1 md:flex-row md:items-center md:gap-2">
+                  <span className="text-xs font-medium text-gray-600 md:text-sm">เดือน</span>
                   <Select value={String(filters.month)} onValueChange={(v) => setFilters(prev => ({ ...prev, month: Number(v) }))}>
-                    <SelectTrigger className="bg-white border-gray-200 shadow-sm w-44">
+                    <SelectTrigger className="w-full bg-white border-gray-200 shadow-sm md:w-44">
                       <SelectValue placeholder="เลือกเดือน" />
                     </SelectTrigger>
                     <SelectContent>
@@ -411,10 +377,10 @@ export default function UserDashboardClient({ initialYear, initialRows }: { init
                   </Select>
                 </div>
               ) : (
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-gray-600">เดือน (ปีงบ)</span>
+                <div className="flex flex-col gap-1 md:flex-row md:items-center md:gap-2">
+                  <span className="text-xs font-medium text-gray-600 md:text-sm">เดือน (ปีงบ)</span>
                   <Select value={String(filters.fmonth)} onValueChange={(v) => setFilters(prev => ({ ...prev, fmonth: Number(v) }))}>
-                    <SelectTrigger className="bg-white border-gray-200 shadow-sm w-44">
+                    <SelectTrigger className="w-full bg-white border-gray-200 shadow-sm md:w-44">
                       <SelectValue placeholder="เลือกเดือน (ปีงบ)" />
                     </SelectTrigger>
                     <SelectContent>
@@ -427,10 +393,16 @@ export default function UserDashboardClient({ initialYear, initialRows }: { init
                 </div>
               )}
             </div>
-          </div>
+
+          {data.error && (
+            <div className="flex items-center gap-3 p-4 border border-red-200 bg-red-50 rounded-xl">
+              <XCircle className="w-5 h-5 text-red-500 shrink-0" />
+              <p className="text-sm text-red-700">โหลดข้อมูลไม่สำเร็จ: {data.error}</p>
+            </div>
+          )}
 
           {/* Quick stats cards */}
-          <div className="grid grid-cols-1 gap-4 mt-6 md:grid-cols-3">
+          <div className={`grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4 transition-opacity ${data.loading ? "opacity-50" : ""}`} aria-busy={data.loading}>
             {(() => {
               const summaryTotal = filteredRows.reduce((sum, r) => sum + (Number(r.totalDays) || 0), 0);
               const cards = Object.entries(stats.statusStats).map(([status, days]) => {
@@ -441,7 +413,7 @@ export default function UserDashboardClient({ initialYear, initialRows }: { init
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm font-medium text-gray-600">{status}</p>
-                        <p className="mt-1 text-2xl font-bold text-gray-900">{days}</p>
+                        <p className="mt-1 text-2xl font-bold text-gray-900">{days} <span className="text-base font-medium text-gray-600">วัน</span></p>
                         <p className="text-xs text-gray-500">
                           คิดเป็น {utils.formatPercent(days, summaryTotal)} ของทั้งหมด
                         </p>
@@ -454,15 +426,13 @@ export default function UserDashboardClient({ initialYear, initialRows }: { init
               return cards;
             })()}
           </div>
-        </div>
 
         {/* Charts */}
-        <div className="px-6 pb-8">
-          <div className="grid grid-cols-1 gap-8 xl:grid-cols-2">
+          <div className={`grid grid-cols-1 gap-4 sm:gap-6 xl:grid-cols-2 transition-opacity ${data.loading ? "opacity-50" : ""}`}>
             {/* Bar Chart */}
-            <Card className="border-0 shadow-lg bg-white/80 backdrop-blur-sm">
-              <CardContent className="p-8">
-                <h2 className="mb-6 text-xl font-bold text-gray-900">สรุปการลาตามประเภท</h2>
+            <Card className="border shadow-sm">
+              <CardContent className="p-4 sm:p-6">
+                <h2 className="mb-4 text-lg font-bold text-gray-900 sm:text-xl">สรุปการลาตามประเภท</h2>
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={stats.byType} barCategoryGap="20%">
                     <CartesianGrid {...chartStyles.grid} />
@@ -482,9 +452,9 @@ export default function UserDashboardClient({ initialYear, initialRows }: { init
             </Card>
 
             {/* Stats Panel */}
-            <Card className="border-0 shadow-lg bg-white/80 backdrop-blur-sm">
-              <CardContent className="p-8">
-                <h2 className="mb-6 text-xl font-bold text-gray-900">สถิติการลา</h2>
+            <Card className="border shadow-sm">
+              <CardContent className="p-4 sm:p-6">
+                <h2 className="mb-4 text-lg font-bold text-gray-900 sm:text-xl">สถิติการลา</h2>
 
                 {/* Line Chart */}
                 <div className="mb-8">
@@ -517,7 +487,7 @@ export default function UserDashboardClient({ initialYear, initialRows }: { init
                 {/* Pie Chart */}
                 <div>
                   <h3 className="mb-4 text-sm font-semibold text-gray-700">สัดส่วนตามสถานะ</h3>
-                  <ResponsiveContainer width="100%" height={200}>
+                  <ResponsiveContainer width="100%" height={240}>
                     <PieChart>
                       <Pie
                         data={stats.statusPieData}
@@ -528,10 +498,6 @@ export default function UserDashboardClient({ initialYear, initialRows }: { init
                         innerRadius={35}
                         outerRadius={70}
                         paddingAngle={2}
-                        label={({ name, value }) =>
-                          `${name}: ${value} วัน (${utils.formatPercent(value, stats.totalDays)})`
-                        }
-                        labelLine={false}
                       >
                         {stats.statusPieData.map((entry, index) => {
                           const color =
@@ -548,14 +514,19 @@ export default function UserDashboardClient({ initialYear, initialRows }: { init
                         ]}
                         contentStyle={{ ...chartStyles.tooltip, borderRadius: '8px' }}
                       />
+                      <Legend
+                        formatter={(name: string) => {
+                          const v = stats.statusStats[name as keyof typeof stats.statusStats] ?? 0;
+                          return `${name} ${v} วัน (${utils.formatPercent(v, stats.totalDays)})`;
+                        }}
+                        wrapperStyle={{ fontSize: 12 }}
+                      />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
               </CardContent>
             </Card>
           </div>
-        </div>
-      </main>
-    </div>
+    </PageContainer>
   );
 }
