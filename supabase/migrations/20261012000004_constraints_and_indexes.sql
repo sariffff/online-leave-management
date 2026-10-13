@@ -55,9 +55,13 @@ alter table public.userleavequota alter column reserved set not null;
 -- total_remaining เป็น NULL ได้ (ประเภทลาที่ไม่จำกัดโควตา เช่น ลากิจกรณีพิเศษ)
 
 alter table public.userleavequota
+  drop constraint if exists chk_quota_non_negative;
+alter table public.userleavequota
   add constraint chk_quota_non_negative check (total_used >= 0 and reserved >= 0) not valid;
 alter table public.userleavequota validate constraint chk_quota_non_negative;
 
+alter table public.leaverequest
+  drop constraint if exists chk_leaverequest_dates;
 alter table public.leaverequest
   add constraint chk_leaverequest_dates check (date_end >= date_start) not valid;
 alter table public.leaverequest validate constraint chk_leaverequest_dates;
