@@ -14,7 +14,7 @@ export default function UserSidebar() {
         { title: "การลา", icon: FileText, href: "/leave-page" },
         { title: "ประวัติการลา", icon: History, href: "/leave-history" },
         { title: "วันลาคงเหลือ", icon: Wallet, href: "/leave-overview" },
-        { title: "Dashboard", icon: LayoutDashboard, href: "/dashbord-user" },
+        { title: "แดชบอร์ด", icon: LayoutDashboard, href: "/dashbord-user" },
       ]}
       footer="© 2025 School Management"
     />

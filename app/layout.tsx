@@ -1,19 +1,24 @@
-import type { Metadata } from "next";
-import { Geist } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Geist, Noto_Sans_Thai } from "next/font/google";
 import "./globals.css";
 import HeaderComponent from "@/components/universal/HeaderComponent";
+import { NavProvider } from "@/components/shell/NavContext";
 import { Toaster } from "react-hot-toast";
 import { requireAuth } from "@/lib/guard";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-  display: "swap",
-});
+const latin = Geist({ variable: "--font-latin", subsets: ["latin"], display: "swap" });
+// ฟอนต์ไทยเดียวกันทุกเครื่อง (เดิมใช้ฟอนต์ของเครื่องผู้ใช้ หน้าตาจึงต่างกัน)
+const thai = Noto_Sans_Thai({ variable: "--font-thai", subsets: ["thai"], display: "swap" });
 
 export const metadata: Metadata = {
   title: "ระบบลาออนไลน์ โรงเรียนบ้านตาสา",
   description: "ระบบลาออนไลน์ โรงเรียนบ้านตาสา",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#2563eb",
 };
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
@@ -31,10 +36,13 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
 
   return (
     <html lang="th">
-      <body className={`${geistSans.variable} antialiased`}>
-        <HeaderComponent initialMe={initialMe} />
-        <Toaster position="bottom-right" />
-        {children}
+      {/* กรอบหน้า: สูงเท่าจอพอดี header ไม่หด ส่วนล่างเลื่อนในตัว → ไม่มีการเลื่อนซ้อน 2 ชั้น */}
+      <body className={`${latin.variable} ${thai.variable} flex h-dvh flex-col overflow-hidden antialiased`}>
+        <NavProvider signedIn={!!initialMe}>
+          <HeaderComponent initialMe={initialMe} />
+          <div className="flex-1 min-h-0 overflow-y-auto">{children}</div>
+        </NavProvider>
+        <Toaster position="top-center" toastOptions={{ duration: 4000 }} />
       </body>
     </html>
   );
