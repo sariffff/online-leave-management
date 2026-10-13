@@ -1,14 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Sidebar from "@/components/admin/sidebar";
 import Pagination from "@/components/shared/Pagination";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import UserFormModal, { type AdminUser } from "@/components/admin/Modals/user/UserFormModal";
 import UserActionModal, { type UserAction } from "@/components/admin/Modals/user/UserActionModal";
+import { PageContainer, PageHeader } from "@/components/shell/Page";
 import { apiFetch } from "@/lib/client/api";
 import { fullName } from "@/lib/format";
+import { roleLabel } from "@/lib/roles";
 
 const PAGE_SIZE = 10;
 
@@ -35,7 +36,7 @@ export default function UserManagementClient({ initialUsers }: { initialUsers?: 
     }
   }, []);
 
-  // มีรายชื่อจากเซิร์ฟเวอร์แล้ว → ไม่ต้องโหลดตอนเปิดหน้า (โหลดซ้ำเฉพาะหลังเพิ่ม/แก้ไข/ลบ)
+  // มีรายชื่อจากเซิร์ฟเวอร์แล้ว → ไม่ต้องโหลดตอนเปิดหน้า (โหลดใหม่หลังแก้ไขเท่านั้น)
   useEffect(() => {
     if (!initialUsers) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -57,99 +58,187 @@ export default function UserManagementClient({ initialUsers }: { initialUsers?: 
   const safePage = Math.min(page, totalPages);
   const start = (safePage - 1) * PAGE_SIZE;
   const visible = filtered.slice(start, start + PAGE_SIZE);
+  const status = loading ? "loading" : error ? "error" : visible.length === 0 ? "empty" : "rows";
+
+  const statusPill = (u: AdminUser) => (
+    <span
+      className={`inline-flex shrink-0 rounded-full border px-2 py-0.5 text-xs ${u.is_active ? "bg-green-100 text-green-800 border-green-200" : "bg-red-100 text-red-800 border-red-200"}`}
+    >
+      {u.is_active ? "ใช้งาน" : "ปิดใช้งาน"}
+    </span>
+  );
+
+  const rolePills = (u: AdminUser) => (
+    <div className="flex flex-wrap gap-1">
+      {u.roles.map((r) => (
+        <span key={r.role_type_id} className="rounded-md bg-blue-100 px-1.5 py-0.5 text-xs text-blue-800">
+          {roleLabel(r.role_name)}
+        </span>
+      ))}
+      {u.roles.length === 0 && <span className="text-gray-400">ไม่ระบุ</span>}
+    </div>
+  );
+
+  const actions = (u: AdminUser, mobile = false) => {
+    const h = mobile ? "h-10" : "h-8";
+    return (
+      <div className={mobile ? "grid grid-cols-2 gap-2" : "flex flex-wrap items-center gap-1"}>
+        <Button size="sm" variant="outline" className={h} onClick={() => setForm({ user: u })}>
+          แก้ไข
+        </Button>
+        {u.is_active ? (
+          <Button
+            size="sm"
+            variant="outline"
+            className={`${h} text-yellow-700 border-yellow-300 hover:bg-yellow-50`}
+            onClick={() => setAction({ type: "deactivate", user: u })}
+          >
+            ปิดใช้งาน
+          </Button>
+        ) : (
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              className={`${h} text-green-700 border-green-300 hover:bg-green-50`}
+              onClick={() => setAction({ type: "reactivate", user: u })}
+            >
+              เปิดใช้งาน
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className={`${h} text-red-600 border-red-300 hover:bg-red-50 ${mobile ? "col-span-2" : ""}`}
+              onClick={() => setAction({ type: "delete", user: u })}
+            >
+              ลบ
+            </Button>
+          </>
+        )}
+      </div>
+    );
+  };
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <Sidebar />
+    <PageContainer>
+      <PageHeader
+        title={`บุคลากรทั้งหมด (${filtered.length})`}
+        description="เพิ่ม แก้ไข กำหนดบทบาท และเปิด/ปิดการใช้งานบัญชี"
+        actions={
+          <Button onClick={() => setForm({ user: null })} className="h-10 text-white bg-purple-600 hover:bg-purple-700">
+            + เพิ่มบุคลากร
+          </Button>
+        }
+      />
 
-      <div className="flex-1 overflow-auto">
-        <div className="min-h-screen p-6">
-          <div className="flex flex-col items-start justify-between gap-3 mb-4 sm:flex-row sm:items-center">
-            <h2 className="text-lg font-bold sm:text-xl">บุคลากรทั้งหมด ({filtered.length})</h2>
-            <Button onClick={() => setForm({ user: null })} className="text-white bg-purple-600 hover:bg-purple-700">
-              + เพิ่มบุคลากร
-            </Button>
-          </div>
-
-          <div className="flex flex-col gap-3 mb-4 sm:flex-row">
-            <Input placeholder="ค้นหาชื่อ-สกุล หรือ อีเมล..." value={search} onChange={(e) => setSearch(e.target.value)} className="sm:w-1/2" />
-            <select value={role} onChange={(e) => setRole(e.target.value)} className="h-9 px-3 text-sm bg-white border rounded-md sm:w-1/4">
-              <option value="all">ทุกบทบาท</option>
-              {roleNames.map((r) => <option key={r}>{r}</option>)}
-            </select>
-          </div>
-
-          <div className="mb-8 overflow-hidden bg-white shadow-sm rounded-xl">
-            <div className="overflow-x-auto">
-              <table className="w-full text-[13px]">
-                <thead className="border-b border-gray-200 bg-gray-50">
-                  <tr className="text-gray-500 uppercase">
-                    {["ลำดับ", "ชื่อ - สกุล", "อีเมล", "เบอร์โทร", "บทบาท", "สถานะ", "การจัดการ"].map((h) => (
-                      <th key={h} className="px-4 py-2 text-left text-[11px] tracking-wide">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {loading ? (
-                    Array.from({ length: 5 }).map((_, i) => (
-                      <tr key={i}><td colSpan={7} className="px-4 py-3"><div className="h-5 bg-gray-100 rounded animate-pulse" /></td></tr>
-                    ))
-                  ) : error ? (
-                    <tr><td colSpan={7} className="px-6 py-10 text-center text-red-600">{error}</td></tr>
-                  ) : visible.length === 0 ? (
-                    <tr><td colSpan={7} className="px-6 py-10 text-center text-gray-500">ไม่พบข้อมูลตามเงื่อนไข</td></tr>
-                  ) : (
-                    visible.map((u, i) => (
-                      <tr key={u.user_id} className="hover:bg-gray-50">
-                        <td className="px-4 py-2 font-medium">{start + i + 1}</td>
-                        <td className="px-4 py-2">
-                          {fullName(u)}
-                          {u.is_teacher && <span className="ml-2 text-[11px] text-indigo-600">(ครู)</span>}
-                        </td>
-                        <td className="px-4 py-2">{u.email}</td>
-                        <td className="px-4 py-2">{u.tel || "-"}</td>
-                        <td className="px-4 py-2">
-                          <div className="flex flex-wrap gap-1">
-                            {u.roles.map((r) => (
-                              <span key={r.role_type_id} className="rounded-md bg-blue-100 text-blue-800 px-1.5 py-0.5 text-[11px]">{r.role_name}</span>
-                            ))}
-                            {u.roles.length === 0 && <span className="text-gray-400">ไม่ระบุ</span>}
-                          </div>
-                        </td>
-                        <td className="px-4 py-2">
-                          <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] ${u.is_active ? "bg-green-100 text-green-800 border-green-200" : "bg-red-100 text-red-800 border-red-200"}`}>
-                            {u.is_active ? "ใช้งาน" : "ปิดใช้งาน"}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2">
-                          <div className="flex flex-wrap items-center gap-1">
-                            <Button size="sm" variant="outline" className="h-7 px-2 text-[12px]" onClick={() => setForm({ user: u })}>แก้ไข</Button>
-                            {u.is_active ? (
-                              <Button size="sm" variant="outline" className="h-7 px-2 text-[12px] text-yellow-700 border-yellow-300 hover:bg-yellow-50" onClick={() => setAction({ type: "deactivate", user: u })}>
-                                ปิดใช้งาน
-                              </Button>
-                            ) : (
-                              <>
-                                <Button size="sm" variant="outline" className="h-7 px-2 text-[12px] text-green-700 border-green-300 hover:bg-green-50" onClick={() => setAction({ type: "reactivate", user: u })}>
-                                  เปิดใช้งาน
-                                </Button>
-                                <Button size="sm" variant="outline" className="h-7 px-2 text-[12px] text-red-600 border-red-300 hover:bg-red-50" onClick={() => setAction({ type: "delete", user: u })}>
-                                  ลบ
-                                </Button>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <Pagination page={safePage} totalPages={totalPages} onChange={setPage} total={filtered.length} />
-          </div>
-        </div>
+      <div className="flex flex-col gap-3 p-3 bg-white border shadow-sm sm:flex-row sm:p-4 rounded-xl">
+        <Input
+          placeholder="ค้นหาชื่อ-สกุล หรือ อีเมล..."
+          aria-label="ค้นหาบุคลากร"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="h-10 sm:flex-1"
+        />
+        <select value={role} onChange={(e) => setRole(e.target.value)} aria-label="กรองตามบทบาท" className="h-10 px-3 text-sm bg-white border rounded-md sm:w-56">
+          <option value="all">ทุกบทบาท</option>
+          {roleNames.map((r) => (
+            <option key={r} value={r}>
+              {roleLabel(r)}
+            </option>
+          ))}
+        </select>
       </div>
+
+      <section className="overflow-hidden bg-white border shadow-sm rounded-xl">
+        {/* จอเล็กกว่า xl: การ์ด (2 คอลัมน์ตั้งแต่ sm) */}
+        <div className="xl:hidden">
+          {status === "loading" && (
+            <div className="p-4 space-y-3">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="h-32 bg-gray-100 rounded-lg animate-pulse" />
+              ))}
+            </div>
+          )}
+          {status === "error" && <p className="px-4 py-10 text-center text-red-600">{error}</p>}
+          {status === "empty" && <p className="px-4 py-10 text-center text-gray-500">ไม่พบข้อมูลตามเงื่อนไข</p>}
+          {status === "rows" && (
+            <ul className="grid gap-3 p-3 sm:grid-cols-2 sm:p-4">
+              {visible.map((u) => (
+                <li key={u.user_id} className="flex flex-col p-4 space-y-2 border border-gray-200 rounded-lg">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-medium text-gray-900">
+                        {fullName(u)}
+                        {u.is_teacher && <span className="ml-1 text-xs text-indigo-600">(ครู)</span>}
+                      </div>
+                      <div className="text-xs text-gray-500 break-all">{u.email}</div>
+                      {u.tel && <div className="text-xs text-gray-500">{u.tel}</div>}
+                    </div>
+                    {statusPill(u)}
+                  </div>
+                  {rolePills(u)}
+                  <div className="pt-1 mt-auto">{actions(u, true)}</div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* จอ xl ขึ้นไป: ตาราง */}
+        <div className="hidden overflow-x-auto xl:block">
+          <table className="w-full text-sm">
+            <thead className="border-b border-gray-200 bg-gray-50">
+              <tr className="text-gray-600">
+                {["ลำดับ", "ชื่อ - สกุล", "อีเมล", "เบอร์โทร", "บทบาท", "สถานะ", "การจัดการ"].map((h) => (
+                  <th key={h} className="px-4 py-3 text-xs font-medium tracking-wide text-left whitespace-nowrap">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {status === "loading" &&
+                Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i}>
+                    <td colSpan={7} className="px-4 py-3">
+                      <div className="h-5 bg-gray-100 rounded animate-pulse" />
+                    </td>
+                  </tr>
+                ))}
+              {status === "error" && (
+                <tr>
+                  <td colSpan={7} className="px-6 py-10 text-center text-red-600">
+                    {error}
+                  </td>
+                </tr>
+              )}
+              {status === "empty" && (
+                <tr>
+                  <td colSpan={7} className="px-6 py-10 text-center text-gray-500">
+                    ไม่พบข้อมูลตามเงื่อนไข
+                  </td>
+                </tr>
+              )}
+              {status === "rows" &&
+                visible.map((u, i) => (
+                  <tr key={u.user_id} className="hover:bg-gray-50">
+                    <td className="px-4 py-2.5 font-medium">{start + i + 1}</td>
+                    <td className="px-4 py-2.5 min-w-40">
+                      {fullName(u)}
+                      {u.is_teacher && <span className="ml-1 text-xs text-indigo-600">(ครู)</span>}
+                    </td>
+                    <td className="px-4 py-2.5 break-all min-w-40">{u.email}</td>
+                    <td className="px-4 py-2.5 whitespace-nowrap">{u.tel || "-"}</td>
+                    <td className="px-4 py-2.5">{rolePills(u)}</td>
+                    <td className="px-4 py-2.5">{statusPill(u)}</td>
+                    <td className="px-4 py-2.5">{actions(u)}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+        <Pagination page={safePage} totalPages={totalPages} onChange={setPage} total={filtered.length} />
+      </section>
 
       <UserFormModal open={!!form} user={form?.user ?? null} onClose={() => setForm(null)} onSaved={load} />
       <UserActionModal
@@ -159,6 +248,6 @@ export default function UserManagementClient({ initialUsers }: { initialUsers?: 
         onClose={() => setAction(null)}
         onDone={load}
       />
-    </div>
+    </PageContainer>
   );
 }

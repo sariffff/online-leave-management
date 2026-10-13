@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Sidebar from "@/components/admin/sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -115,13 +114,13 @@ export default function SemesterManagementPage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-gray-100">
-      <Sidebar />
-      
-      <div className="flex-1 p-6">
+    <div className="w-full p-4 mx-auto max-w-screen-2xl sm:p-6">
+        <div role="note" className="px-4 py-3 mb-4 text-sm border rounded-lg border-amber-300 bg-amber-50 text-amber-900">
+          หน้านี้ยังเป็น<strong>ข้อมูลตัวอย่าง</strong> — การเพิ่ม/แก้ไข/ลบยังไม่บันทึกลงระบบ
+        </div>
         {/* Header Section */}
         <div className="mb-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h1 className="text-2xl font-bold text-gray-800">
                 จัดการภาคเรียน
@@ -278,7 +277,6 @@ export default function SemesterManagementPage() {
             </table>
           </div>
         </div>
-      </div>
     </div>
   );
 }

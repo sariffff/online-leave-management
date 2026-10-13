@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { FaSearch, FaUserGraduate } from "react-icons/fa";
-import Sidebar from "@/components/academic/sidebar";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/client/api";
+import { PageContainer, PageHeader } from "@/components/shell/Page";
 
 type Teacher = { teacher_id: number; user_id: string; name: string; subject_group_name: string | null };
 type Slot = {
@@ -66,17 +66,15 @@ export default function TeachingSchedulePage() {
   const cell = (day: number, period: number) => slots.filter((s) => s.day_of_week === day && s.period_number === period);
 
   return (
-    <div className="flex min-h-screen bg-gray-100">
-      <Sidebar />
-
-      <div className="flex-1 p-3 space-y-4 sm:p-6">
-        <div className="p-4 bg-white border rounded-lg shadow-sm">
-          <h3 className="mb-3 text-base font-medium text-gray-800 sm:text-lg">ค้นหาอาจารย์</h3>
-          <div className="relative max-w-md">
+    <PageContainer>
+      <PageHeader title="ตารางสอน" description="ค้นหาอาจารย์เพื่อดูตารางสอนรายสัปดาห์" />
+        <div className="p-4 bg-white border rounded-xl shadow-sm">
+          <label htmlFor="teacher-search" className="block mb-2 text-sm font-medium text-gray-800">ค้นหาอาจารย์</label>
+          <div className="relative w-full sm:max-w-md">
             <FaSearch className="absolute w-4 h-4 text-gray-400 -translate-y-1/2 left-3 top-1/2" />
-            <Input placeholder="พิมพ์ชื่ออาจารย์..." value={search} onChange={(e) => setSearch(e.target.value)} className="h-10 pl-10" />
+            <Input id="teacher-search" placeholder="พิมพ์ชื่ออาจารย์..." value={search} onChange={(e) => setSearch(e.target.value)} className="h-10 pl-10" />
             {matches.length > 0 && (
-              <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg">
+              <div className="absolute z-10 w-full mt-1 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg max-h-72">
                 {matches.map((t) => (
                   <button
                     key={t.teacher_id}
@@ -84,7 +82,7 @@ export default function TeachingSchedulePage() {
                       setSelected(t);
                       setSearch(t.name);
                     }}
-                    className="block w-full px-4 py-2 text-left hover:bg-gray-50"
+                    className="block w-full px-4 py-2.5 text-left hover:bg-gray-50"
                   >
                     {t.name}
                     {t.subject_group_name ? <span className="ml-2 text-xs text-gray-500">{t.subject_group_name}</span> : null}
@@ -95,7 +93,7 @@ export default function TeachingSchedulePage() {
           </div>
         </div>
 
-        <div className="overflow-hidden bg-white border rounded-lg shadow-sm">
+        <div className="overflow-hidden bg-white border rounded-xl shadow-sm">
           <div className="p-3 border-b bg-gray-50 sm:p-4">
             <h3 className="text-base font-medium text-gray-800 sm:text-lg">
               {selected ? `ตารางสอนของ ${selected.name}` : "ตารางสอน - กรุณาเลือกอาจารย์"}
@@ -114,7 +112,37 @@ export default function TeachingSchedulePage() {
           ) : slots.length === 0 ? (
             <div className="p-12 text-center text-gray-500">ยังไม่มีตารางสอน</div>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+            {/* มือถือ: รายการตามวัน */}
+            <div className="divide-y md:hidden">
+              {DAYS.map((day, i) => {
+                const items = slots.filter((s) => s.day_of_week === i + 1).sort((a, b) => a.period_number - b.period_number);
+                return (
+                  <div key={day} className="p-3">
+                    <div className="mb-2 text-sm font-semibold text-gray-900">วัน{day}</div>
+                    {items.length === 0 ? (
+                      <div className="text-sm text-gray-400">ไม่มีคาบสอน</div>
+                    ) : (
+                      <ul className="space-y-2">
+                        {items.map((s) => (
+                          <li key={s.teaching_schedule_id} className="flex gap-3 p-2 text-sm border border-blue-200 rounded-lg bg-blue-50">
+                            <div className="w-14 shrink-0">
+                              <div className="font-semibold">คาบ {s.period_number}</div>
+                              {s.start_time && <div className="text-xs text-gray-500">{s.start_time}</div>}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-medium">{s.subject_name || "-"}</div>
+                              <div className="text-gray-600">{s.classroom_name || "-"}{s.level_name ? ` · ${s.level_name}` : ""}</div>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full border-collapse" style={{ minWidth: 800 }}>
                 <thead>
                   <tr className="border-b bg-gray-50">
@@ -155,9 +183,9 @@ export default function TeachingSchedulePage() {
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </div>
-      </div>
-    </div>
+    </PageContainer>
   );
 }

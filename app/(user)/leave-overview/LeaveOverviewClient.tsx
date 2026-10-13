@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import UserSidebar from "@/components/user/UserSidebar";
+import { PageContainer, PageHeader } from "@/components/shell/Page";
 import { apiFetch } from "@/lib/client/api";
 import { getFiscalYearFromISO } from "@/utils/year";
 
@@ -60,28 +60,27 @@ export default function LeaveOverviewClient({ initialYear, initialItems }: { ini
   }, [year, tick]);
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <UserSidebar />
-      <div className="flex-1 overflow-auto">
-        <div className="min-h-screen p-6 bg-gray-50">
-          <div className="flex flex-col gap-4 mb-6 md:flex-row md:items-end md:justify-between">
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900">ภาพรวมการลา</h2>
-              <p className="mt-1 text-sm text-gray-600">แสดงจำนวนวันลาคงเหลือของแต่ละประเภท (อิงจากปีงบประมาณ)</p>
-              <p className="mt-1 text-xs text-gray-500">
-                ปีงบที่เลือก: {toBE(year)} (ช่วง 1 ต.ค. {toBE(year - 1)} – 30 ก.ย. {toBE(year)})
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <label htmlFor="fy" className="text-sm text-gray-600">ปีงบ (พ.ศ.)</label>
-              <select id="fy" value={year} onChange={(e) => setYear(Number(e.target.value))} className="px-2 py-1 text-sm bg-white border rounded-md">
-                {yearOptions.map((y) => <option key={y} value={y}>{toBE(y)}</option>)}
-              </select>
-            </div>
+    <PageContainer>
+      <PageHeader
+        title="วันลาคงเหลือ"
+        description={
+          <>
+            จำนวนวันลาคงเหลือของแต่ละประเภท ปีงบ {toBE(year)}
+            <span className="block text-xs text-gray-500">ช่วง 1 ต.ค. {toBE(year - 1)} – 30 ก.ย. {toBE(year)}</span>
+          </>
+        }
+        actions={
+          <div className="flex items-center gap-2">
+            <label htmlFor="fy" className="text-sm text-gray-600 shrink-0">ปีงบ (พ.ศ.)</label>
+            <select id="fy" value={year} onChange={(e) => setYear(Number(e.target.value))} className="flex-1 h-10 px-3 text-sm bg-white border rounded-md">
+              {yearOptions.map((y) => <option key={y} value={y}>{toBE(y)}</option>)}
+            </select>
           </div>
+        }
+      />
 
           {loading ? (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
               {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-32 bg-white rounded-lg shadow animate-pulse" />)}
             </div>
           ) : error ? (
@@ -92,9 +91,9 @@ export default function LeaveOverviewClient({ initialYear, initialItems }: { ini
           ) : items.length === 0 ? (
             <div className="text-sm text-gray-500">ไม่พบข้อมูล</div>
           ) : (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
               {items.map((item) => (
-                <div key={item.leave_type_id} className="p-4 bg-white rounded-lg shadow">
+                <div key={item.leave_type_id} className="p-4 bg-white border border-gray-200 shadow-sm rounded-xl">
                   <h3 className="mb-2 font-semibold text-gray-800">{item.name}</h3>
 
                   {item.unlimited ? (
@@ -104,7 +103,7 @@ export default function LeaveOverviewClient({ initialYear, initialItems }: { ini
                     </p>
                   ) : (
                     <>
-                      <div className="flex items-center justify-between mb-1">
+                      <div className="flex flex-wrap items-center justify-between mb-1 gap-x-2">
                         <span className="text-sm text-gray-600">ใช้แล้ว {item.used}/{item.total}</span>
                         <span className="text-xs text-gray-500">
                           คงเหลือ {item.remaining}
@@ -129,8 +128,6 @@ export default function LeaveOverviewClient({ initialYear, initialItems }: { ini
               ))}
             </div>
           )}
-        </div>
-      </div>
-    </div>
+    </PageContainer>
   );
 }

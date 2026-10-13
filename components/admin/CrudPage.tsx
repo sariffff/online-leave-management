@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import toast from "react-hot-toast";
 import { FaEdit, FaPlus, FaSearch, FaTrashAlt } from "react-icons/fa";
-import Sidebar from "@/components/admin/sidebar";
+import { PageContainer, PageHeader } from "@/components/shell/Page";
 import Pagination from "@/components/shared/Pagination";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -154,83 +154,113 @@ export default function CrudPage(props: Props) {
     }
   }
 
+  const rowActions = (row: Row, mobile = false) => (
+    <div className={mobile ? "grid grid-cols-2 gap-2" : "flex justify-center gap-2"}>
+      <Button size="sm" variant="outline" className={`text-green-700 border-green-300 hover:bg-green-50 ${mobile ? "h-10" : "h-8"}`} onClick={() => openEdit(row)}>
+        <FaEdit className="w-3.5 h-3.5" /> แก้ไข
+      </Button>
+      <Button size="sm" variant="outline" className={`text-red-600 border-red-300 hover:bg-red-50 ${mobile ? "h-10" : "h-8"}`} onClick={() => setDeleting(row)}>
+        <FaTrashAlt className="w-3.5 h-3.5" /> ลบ
+      </Button>
+    </div>
+  );
+
+  const status = loading ? "loading" : error ? "error" : visible.length === 0 ? "empty" : "rows";
+
   return (
-    <div className="flex min-h-screen bg-gray-100">
-      <Sidebar />
+    <PageContainer>
+      <PageHeader
+        title={title}
+        description={
+          <>
+            {subtitle}
+            {note && <span className="block mt-1 text-gray-500">{note}</span>}
+          </>
+        }
+        actions={
+          <Button onClick={openAdd} className="h-10 text-white bg-purple-600 hover:bg-purple-700">
+            <FaPlus className="w-4 h-4" />
+            {addLabel}
+          </Button>
+        }
+      />
 
-      <div className="flex-1 p-6">
-        <div className="mb-6">
-          <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-bold text-gray-800">{title}</h1>
-            <Button onClick={openAdd} className="flex items-center gap-2 px-4 py-2 text-white bg-purple-600 rounded-lg hover:bg-purple-700">
-              <FaPlus className="w-4 h-4" />
-              {addLabel}
-            </Button>
+      <div className="p-3 bg-white border shadow-sm sm:p-4 rounded-xl">
+        <div className="flex flex-col gap-3 lg:flex-row">
+          <div className="relative flex-1">
+            <FaSearch className="absolute w-4 h-4 text-gray-400 -translate-y-1/2 left-3 top-1/2" />
+            <Input placeholder="ค้นหา..." aria-label="ค้นหา" value={search} onChange={(e) => setSearch(e.target.value)} className="h-10 pl-10" />
           </div>
-          <p className="mt-1 text-gray-600">{subtitle}</p>
-          {note && <p className="mt-1 text-sm text-gray-500">{note}</p>}
-        </div>
-
-        <div className="p-4 mb-6 bg-white border rounded-lg shadow-sm">
-          <div className="flex flex-col gap-4 lg:flex-row">
-            <div className="relative flex-1">
-              <FaSearch className="absolute w-4 h-4 text-gray-400 -translate-y-1/2 left-3 top-1/2" />
-              <Input placeholder="ค้นหา..." value={search} onChange={(e) => setSearch(e.target.value)} className="h-10 pl-10" />
-            </div>
-            {filterBy && (
-              <select className={`${selectCls} lg:w-64 h-10`} value={filter} onChange={(e) => setFilter(e.target.value)}>
-                <option value="all">{filterBy.label}</option>
-                {filterValues.map((v) => <option key={v}>{v}</option>)}
-              </select>
-            )}
-          </div>
-        </div>
-
-        <div className="overflow-hidden bg-white border rounded-lg shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-[13px]">
-              <thead className="border-b border-gray-200 bg-gray-50">
-                <tr className="text-gray-600 uppercase">
-                  {columns.map((c) => (
-                    <th key={c.header} className={`px-4 py-2 text-left text-[11px] tracking-wide ${c.className ?? ""}`}>{c.header}</th>
-                  ))}
-                  <th className="px-4 py-2 text-center text-[11px] tracking-wide w-44">การจัดการ</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {loading ? (
-                  Array.from({ length: 5 }).map((_, i) => (
-                    <tr key={i}><td colSpan={columns.length + 1} className="px-4 py-3"><div className="h-5 bg-gray-100 rounded animate-pulse" /></td></tr>
-                  ))
-                ) : error ? (
-                  <tr><td colSpan={columns.length + 1} className="px-6 py-12 text-center text-red-600">{error}</td></tr>
-                ) : visible.length === 0 ? (
-                  <tr><td colSpan={columns.length + 1} className="px-6 py-12 text-center text-gray-500">ไม่พบข้อมูล</td></tr>
-                ) : (
-                  visible.map((row) => (
-                    <tr key={String(row[idKey])} className="transition-colors hover:bg-gray-50">
-                      {columns.map((c) => (
-                        <td key={c.header} className={`px-4 py-2 ${c.className ?? ""}`}>{c.cell(row)}</td>
-                      ))}
-                      <td className="px-4 py-2">
-                        <div className="flex justify-center gap-2">
-                          <Button size="sm" className="flex items-center gap-1 h-7 px-2 text-[12px] text-white bg-green-600 rounded hover:bg-green-700" onClick={() => openEdit(row)}>
-                            <FaEdit className="w-3 h-3" /> แก้ไข
-                          </Button>
-                          <Button size="sm" className="flex items-center gap-1 h-7 px-2 text-[12px] text-white bg-red-600 rounded hover:bg-red-700" onClick={() => setDeleting(row)}>
-                            <FaTrashAlt className="w-3 h-3" /> ลบ
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-          <Pagination page={safePage} totalPages={totalPages} onChange={setPage} total={filtered.length} />
+          {filterBy && (
+            <select aria-label={filterBy.label} className={`${selectCls} lg:w-64 h-10`} value={filter} onChange={(e) => setFilter(e.target.value)}>
+              <option value="all">{filterBy.label}</option>
+              {filterValues.map((v) => <option key={v}>{v}</option>)}
+            </select>
+          )}
         </div>
       </div>
+
+      <section className="overflow-hidden bg-white border shadow-sm rounded-xl">
+        <div className="px-4 py-3 text-sm font-medium text-gray-700 border-b sm:px-6 bg-gray-50">ทั้งหมด {filtered.length} รายการ</div>
+
+        {/* มือถือ: การ์ด */}
+        <div className="md:hidden">
+          {status === "loading" && (
+            <div className="p-4 space-y-3">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-24 bg-gray-100 rounded-lg animate-pulse" />)}</div>
+          )}
+          {status === "error" && <p className="px-4 py-10 text-center text-red-600">{error}</p>}
+          {status === "empty" && <p className="px-4 py-10 text-center text-gray-500">ไม่พบข้อมูล</p>}
+          {status === "rows" && (
+            <ul className="divide-y divide-gray-200">
+              {visible.map((row) => (
+                <li key={String(row[idKey])} className="p-4 space-y-3">
+                  <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+                    {columns.map((c) => (
+                      <div key={c.header} className="contents">
+                        <dt className="text-gray-500">{c.header}</dt>
+                        <dd className="min-w-0 text-gray-900 break-words">{c.cell(row)}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  {rowActions(row, true)}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* จอ md ขึ้นไป: ตาราง */}
+        <div className="hidden overflow-x-auto md:block">
+          <table className="w-full text-sm">
+            <thead className="border-b border-gray-200 bg-gray-50">
+              <tr className="text-gray-600">
+                {columns.map((c) => (
+                  <th key={c.header} className={`px-4 py-3 text-left text-xs font-medium tracking-wide ${c.className ?? ""}`}>{c.header}</th>
+                ))}
+                <th className="w-48 px-4 py-3 text-xs font-medium tracking-wide text-center">การจัดการ</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {status === "loading" &&
+                Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i}><td colSpan={columns.length + 1} className="px-4 py-3"><div className="h-5 bg-gray-100 rounded animate-pulse" /></td></tr>
+                ))}
+              {status === "error" && <tr><td colSpan={columns.length + 1} className="px-6 py-12 text-center text-red-600">{error}</td></tr>}
+              {status === "empty" && <tr><td colSpan={columns.length + 1} className="px-6 py-12 text-center text-gray-500">ไม่พบข้อมูล</td></tr>}
+              {status === "rows" &&
+                visible.map((row) => (
+                  <tr key={String(row[idKey])} className="transition-colors hover:bg-gray-50">
+                    {columns.map((c) => (
+                      <td key={c.header} className={`px-4 py-2.5 ${c.className ?? ""}`}>{c.cell(row)}</td>
+                    ))}
+                    <td className="px-4 py-2.5">{rowActions(row)}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+        <Pagination page={safePage} totalPages={totalPages} onChange={setPage} total={filtered.length} />
+      </section>
 
       <Dialog open={!!editing} onOpenChange={(v) => !v && !saving && setEditing(null)}>
         <DialogContent className="sm:max-w-lg">
@@ -280,6 +310,6 @@ export default function CrudPage(props: Props) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageContainer>
   );
 }

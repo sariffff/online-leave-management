@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
-import Sidebar from "@/components/admin/sidebar";
+import { PageContainer, PageHeader } from "@/components/shell/Page";
 import Pagination from "@/components/shared/Pagination";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -151,20 +151,35 @@ export default function ScheduleManagementPage() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <Sidebar />
-
-      <div className="w-full p-3 space-y-6 overflow-auto sm:p-6">
-        <div>
-          <h1 className="text-xl font-bold text-gray-800 sm:text-2xl">จัดการตารางสอน</h1>
-          <p className="mt-1 text-sm text-gray-600">เลือกครู → ดูตาราง • เพิ่ม/แก้ไข/ลบคาบ • ลบทั้งตาราง</p>
-        </div>
+    <PageContainer>
+      <PageHeader title="จัดการตารางสอน" description="เลือกครู → ดูตาราง • เพิ่ม/แก้ไข/ลบคาบ • ลบทั้งตาราง" />
 
         {loadError && <div className="px-3 py-2 text-sm text-red-700 border border-red-200 rounded-lg bg-red-50">{loadError}</div>}
 
-        <div className="p-4 bg-white border rounded-lg shadow-sm">
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ค้นหาชื่ออาจารย์…" className="mb-3 sm:w-80" />
-          <table className="w-full text-[13px]">
+        <div className="overflow-hidden bg-white border shadow-sm rounded-xl">
+          <div className="p-3 border-b sm:p-4">
+            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ค้นหาชื่ออาจารย์…" aria-label="ค้นหาอาจารย์" className="h-10 sm:w-80" />
+          </div>
+          {/* มือถือ: รายชื่อแบบการ์ด */}
+          <ul className="divide-y md:hidden">
+            {loading ? (
+              Array.from({ length: 4 }).map((_, i) => <li key={i} className="p-4"><div className="h-12 bg-gray-100 rounded animate-pulse" /></li>)
+            ) : shown.length === 0 ? (
+              <li className="px-4 py-10 text-center text-gray-500">ไม่พบอาจารย์</li>
+            ) : (
+              shown.slice(start, start + PAGE_SIZE).map((t) => (
+                <li key={t.teacher_id} className="flex items-center justify-between gap-3 p-4">
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{t.name}</div>
+                    <div className="text-xs text-gray-500">{t.subject_group_name ?? "-"}</div>
+                  </div>
+                  <Button size="sm" className="h-10 text-white bg-blue-600 shrink-0 hover:bg-blue-700" onClick={() => openTeacher(t)}>ดูตาราง</Button>
+                </li>
+              ))
+            )}
+          </ul>
+          <div className="hidden overflow-x-auto md:block">
+          <table className="w-full text-sm">
             <thead className="border-b bg-gray-50">
               <tr className="text-gray-600 uppercase">
                 <th className="px-4 py-2 text-left text-[11px] w-16">ลำดับ</th>
@@ -192,28 +207,61 @@ export default function ScheduleManagementPage() {
               )}
             </tbody>
           </table>
+          </div>
           <Pagination page={safePage} totalPages={totalPages} onChange={setPage} total={shown.length} />
         </div>
-      </div>
 
       {/* ตารางสอนรายครู */}
       <Dialog open={!!teacher} onOpenChange={(v) => !v && setTeacher(null)}>
-        <DialogContent className="sm:max-w-5xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-5xl max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>ตารางสอน: {teacher?.name}</DialogTitle>
           </DialogHeader>
 
           <div className="flex flex-wrap items-center gap-2">
-            <select className={`${selectCls} sm:w-64`} value={filterSubject} onChange={(e) => setFilterSubject(e.target.value)}>
+            <select aria-label="กรองรายวิชา" className={`${selectCls} h-10 sm:w-64`} value={filterSubject} onChange={(e) => setFilterSubject(e.target.value)}>
               <option value="all">ทุกรายวิชา</option>
               {subjectNames.map((n) => <option key={n}>{n}</option>)}
             </select>
-            <div className="flex-1" />
-            <Button className="text-white bg-purple-600 hover:bg-purple-700" onClick={() => openForm(null)}>+ เพิ่มคาบ</Button>
-            <Button variant="outline" className="text-red-700 border-red-300 hover:bg-red-50" onClick={removeAll} disabled={slots.length === 0}>ลบทั้งตาราง</Button>
+            <div className="hidden flex-1 sm:block" />
+            <Button className="flex-1 h-10 text-white bg-purple-600 sm:flex-none hover:bg-purple-700" onClick={() => openForm(null)}>+ เพิ่มคาบ</Button>
+            <Button variant="outline" className="flex-1 h-10 text-red-700 border-red-300 sm:flex-none hover:bg-red-50" onClick={removeAll} disabled={slots.length === 0}>ลบทั้งตาราง</Button>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* มือถือ: รายการตามวัน */}
+          <div className="space-y-3 md:hidden">
+            {DAY_NAMES.map((day, di) => {
+              const items = visibleSlots.filter((s) => s.day_of_week === di + 1).sort((a, b) => a.period_number - b.period_number);
+              return (
+                <div key={day} className="border rounded-lg">
+                  <div className="px-3 py-2 text-sm font-semibold border-b bg-gray-50">วัน{day}</div>
+                  {slotsLoading ? (
+                    <div className="h-10 m-3 bg-gray-100 rounded animate-pulse" />
+                  ) : items.length === 0 ? (
+                    <div className="px-3 py-3 text-sm text-gray-400">ไม่มีคาบสอน</div>
+                  ) : (
+                    <ul className="divide-y">
+                      {items.map((s) => (
+                        <li key={s.teaching_schedule_id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                          <div className="font-semibold w-14 shrink-0">คาบ {s.period_number}</div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium truncate">{s.subject_name || "-"}</div>
+                            <div className="text-gray-600 truncate">ห้อง {s.classroom_name || "-"}</div>
+                          </div>
+                          <div className="flex gap-1 shrink-0">
+                            <Button size="sm" variant="outline" className="h-9" onClick={() => openForm(s)}>แก้ไข</Button>
+                            <Button size="sm" variant="outline" className="text-red-700 border-red-300 h-9" onClick={() => remove(s)}>ลบ</Button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full border-collapse" style={{ minWidth: 800 }}>
               <thead>
                 <tr className="border-b bg-gray-50">
@@ -272,27 +320,27 @@ export default function ScheduleManagementPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>วัน</Label>
-                <select className={selectCls} value={form.day} onChange={(e) => setForm({ ...form, day: e.target.value })}>
+                <select aria-label="วัน" className={`${selectCls} h-10`} value={form.day} onChange={(e) => setForm({ ...form, day: e.target.value })}>
                   {DAY_NAMES.map((d, i) => <option key={d} value={i + 1}>{d}</option>)}
                 </select>
               </div>
               <div>
                 <Label>คาบ</Label>
-                <select className={selectCls} value={form.period} onChange={(e) => setForm({ ...form, period: e.target.value })}>
+                <select aria-label="คาบ" className={`${selectCls} h-10`} value={form.period} onChange={(e) => setForm({ ...form, period: e.target.value })}>
                   {PERIODS.map((p) => <option key={p.period_number} value={p.period_number}>คาบ {p.period_number} ({p.start_time}-{p.end_time})</option>)}
                 </select>
               </div>
             </div>
             <div>
               <Label>รายวิชา</Label>
-              <select className={selectCls} value={form.subject_id} onChange={(e) => setForm({ ...form, subject_id: e.target.value })}>
+              <select aria-label="รายวิชา" className={`${selectCls} h-10`} value={form.subject_id} onChange={(e) => setForm({ ...form, subject_id: e.target.value })}>
                 <option value="">— ไม่ระบุ —</option>
                 {subjects.map((s) => <option key={s.subject_id} value={s.subject_id}>{s.subject_code} {s.subject_name}</option>)}
               </select>
             </div>
             <div>
               <Label>ห้องเรียน</Label>
-              <select className={selectCls} value={form.classroom_id} onChange={(e) => setForm({ ...form, classroom_id: e.target.value })}>
+              <select aria-label="ห้องเรียน" className={`${selectCls} h-10`} value={form.classroom_id} onChange={(e) => setForm({ ...form, classroom_id: e.target.value })}>
                 <option value="">— ไม่ระบุ —</option>
                 {classrooms.map((c) => <option key={c.classroom_id} value={c.classroom_id}>{c.classroom_name}{c.level_name ? ` (${c.level_name})` : ""}</option>)}
               </select>
@@ -304,6 +352,6 @@ export default function ScheduleManagementPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageContainer>
   );
 }
