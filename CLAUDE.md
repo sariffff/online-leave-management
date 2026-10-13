@@ -11,7 +11,7 @@
 - ทดสอบหลังล็อกอินจริงแล้ว (E2E ทุกบทบาท) — ผล `tests/TEST_REPORT.md`: unit 77/77, E2E ล่าสุด PASS 231 / WARN 4 / FAIL 5 (ข้อมูลเก่า 5) — 2026-10-13 หลังรัน migration
 
 ## งานถัดไป
-- **หน้าตั้งค่าระบบ `SETTINGS_PLAN.md` ครบทั้ง 4 ช่วงแล้ว** + แก้ตาม `bug-report-form-me.md` — **ยังไม่ commit** (ถามผู้ใช้ว่าจะ commit อย่างไร)
+- **หน้าตั้งค่าระบบ `SETTINGS_PLAN.md` ครบทั้ง 4 ช่วงแล้ว** + แก้ตาม `bug-report-form-me.md` — commit แล้ว (9369104, 372e096, 30a0c4f) **ยังไม่ push** (เครื่องมือของ Claude ถูกบล็อกการ push → ผู้ใช้ต้อง `git push origin refactor/system-overhaul` เอง)
   - รอผู้ใช้ตอบ: ย้ายการตั้งค่าจากไฟล์ใน Storage ไปตารางในฐานข้อมูล (migration 007) หลังรัน 001–006 หรือไม่ — Claude แนะนำให้ย้าย
 - **งานหลักตอนนี้: UI ตาม `UI_FIX_PLAN.md`** — เฟส 1–2 เสร็จ (audit 72/72 ผ่าน), เฟส 3–5 ส่วนใหญ่เสร็จ; ที่เหลือดูหัวข้อ "ยังเหลือ" ท้ายไฟล์นั้น (C9/Q4, C15 API ยกเลิกการมอบหมาย, C18, B6, B10, Q1, Q2) — ยังไม่ได้ commit งาน UI
   - โครงหน้าใหม่: `components/shell/` (NavContext, RoleShell, Page) — หน้าไม่ต้องวาด sidebar เอง ใช้ `PageContainer`/`PageHeader`; ตารางใช้การ์ดบนจอเล็ก (LeaveTable/บุคลากร < xl, CRUD < md)
@@ -26,12 +26,13 @@
    - `auth.*` สูง = เชื่อม Supabase ช้า / `db.*` สูง = ควรรัน migration 004 (index) / `google.calendar` = API วันหยุด / `storage.signUrls` = ลิงก์ไฟล์แนบ
 2. ~~migration~~ **รันครบแล้ว 2026-10-13** (001, 002, 005, 004, 006, 003 — RLS เปิดแล้ว, SEC ผ่านทั้ง 7) — ถ้ามีเว็บจริงที่ deploy จาก `main` (โค้ดเก่า) ต้อง deploy โค้ดใหม่ เพราะโค้ดเก่าอ่าน DB ด้วย session ผู้ใช้
 3. ไม่ใช้ Google service account แล้ว — ผู้ใช้ควรลบคีย์เดิมใน Google Cloud (เคยถูก commit ใน `first commit`) และลบไฟล์ `.service-account-key.json`
-4. ถามผู้ใช้ว่าจะ commit งานทั้งหมดเมื่อไร (ก้อนเดียวหรือแยกหลาย commit) — ยังไม่ได้ถามคำตอบ
+4. deploy: ยังไม่รู้ว่าเว็บจริง deploy ที่ไหน (ไม่มี vercel config ใน repo); `origin/main` (1af987c) มี commit ที่ local main (bc7ca90) ไม่มี — ต้องดูก่อน merge
 5. (ทางเลือก) หน้า `semester-management`, `year-management` ยังเป็นข้อมูลจำลอง ไม่มีตารางใน DB รองรับ
 
 ## ประวัติงาน
 
 ### 2026-10-13 (ต่อ)
+- UI audit ทั้งระบบหลังเปิด RLS: 87/87 ไม่มีปัญหา
 - ผู้ใช้รัน migration ครบ (Claude ตรวจข้อมูลก่อน: ไม่มีข้อมูลซ้ำ/กำพร้า; แก้ 004 ให้รันซ้ำได้) → E2E PASS 231 / FAIL 5 (เหลือ DI ข้อมูลเก่าเท่านั้น); แก้ SET-08 ให้รองรับระบบที่มีโลโก้จริง
 - ตั้งค่าระบบช่วง 3–4: `PeriodsTab.tsx`, `AttachmentsTab.tsx`; `checkAttachment/acceptOf/describeAttachments/fileKindOf` ใน `settings-schema.ts`; `assertUploads` ตรวจไฟล์ก่อน insert ใบลา; ย้อนกลับหมวดไฟล์แนบปรับ bucket ด้วย; E2E PASS 226 / FAIL 10 (เดิม), settings 30/30, UI audit settings 15/15
 - ตั้งค่าระบบช่วง 2 (ประเภทการลา/กฎ) ตรวจครบ: build ใหม่ + E2E PASS 222 / FAIL 10 (เดิม RLS 5 + ข้อมูลเก่า 5), SET+LTA 26/26
