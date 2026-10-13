@@ -1,178 +1,98 @@
-// app/api/academic/substitutions/history/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/guard";
+import { route, json, HttpError } from "@/lib/http";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { fullName } from "@/lib/format";
+import { isISODate, toInt, toPosInt } from "@/lib/validate";
+import { teacherIdOfUser } from "@/lib/services/schedule";
+import { ROLE } from "@/lib/roles";
 
 export const runtime = "nodejs";
 
-// ฟอร์แมตชื่อ-สกุลให้สั้นและกัน null
-function fullName(u?: { prename?: string | null; name?: string | null; surname?: string | null } | null) {
-  if (!u) return "";
-  return [u.prename, u.name, u.surname].filter(Boolean).join(" ").trim();
-}
+type NameRow = { prename: string | null; name: string | null; surname: string | null } | null;
+type Row = {
+  substitute_teaching_id: number;
+  date_time: string;
+  teaching_schedule_id: number | null;
+  substitute: NameRow;
+  ts: {
+    period_number: number | null;
+    teacher_id: number | null;
+    subject: { subject_name: string | null } | null;
+    classroom: { classroom_name: string | null } | null;
+    teacher: { user: NameRow } | null;
+  } | null;
+};
 
 /**
- * GET /api/academic/substitutions/history
- * โหมด A: ?leaveId=48
- * โหมด B: ?from=YYYY-MM-DD&to=YYYY-MM-DD[&teacherUserId=uuid]
- *
- * คืน shape:
- * {
- *   items: Array<{
- *     id: number;
- *     date: string;         // YYYY-MM-DD
- *     time: string;         // HH:MM
- *     tsId: number | null;  // teaching_schedule_id (อาจ null ในฐานเก่า)
- *     period?: number | null;
- *     subject?: string;
- *     classroom?: string;
- *     leaver?: string;      // ผู้ลา (เจ้าของตาราง)
- *     substitute?: string;  // ผู้สอนแทน
- *   }>
- * }
+ * ประวัติการสอนแทน — โหมด A: ?leaveId=  |  โหมด B: ?from=&to=[&teacherUserId=]
+ * แบ่งหน้าที่ DB (?page=&pageSize=)
  */
-export async function GET(req: NextRequest) {
-  const g = await requireAuth();
-  if (!g.ok) return NextResponse.json({ error: g.message }, { status: g.status });
+export const GET = route([ROLE.academic], async ({ url }) => {
+  const sp = url.searchParams;
+  const page = toInt(sp.get("page"), 1, 1, 100000);
+  const pageSize = toInt(sp.get("pageSize"), 10, 1, 100);
 
-  try {
-    const url = new URL(req.url);
-    const leaveId = url.searchParams.get("leaveId");
-    const from = url.searchParams.get("from");
-    const to = url.searchParams.get("to");
-    const teacherUserId = url.searchParams.get("teacherUserId") || undefined;
+  let from: string;
+  let to: string;
+  let teacherId: number | null = null;
 
-    // ===== เตรียมกรอบค้นหา =====
-    let dateStart: string | null = null;
-    let dateEnd: string | null = null;
-    let teacherId: number | null = null;
-
-    if (leaveId) {
-      // โหมด A: ใช้ช่วงวันจากใบลา + owner ของใบลา
-      const leaveRes = await g.supa
-        .from("leaverequest")
-        .select("leave_request_id, user_id, date_start, date_end")
-        .eq("leave_request_id", leaveId)
-        .maybeSingle();
-
-      if (leaveRes.error || !leaveRes.data) {
-        return NextResponse.json({ error: leaveRes.error?.message || "leave not found" }, { status: 404 });
-      }
-      dateStart = String(leaveRes.data.date_start);
-      dateEnd = String(leaveRes.data.date_end);
-
-      // หา teacher_id ของผู้ลา
-      const tRes = await g.supa
-        .from("teacher")
-        .select("teacher_id")
-        .eq("user_id", String(leaveRes.data.user_id))
-        .maybeSingle();
-
-      if (tRes.error || !tRes.data) {
-        return NextResponse.json({ error: "teacher not found for leave.user_id" }, { status: 404 });
-      }
-      teacherId = Number(tRes.data.teacher_id);
-    } else {
-      // โหมด B: ใช้ช่วงวันจาก query
-      if (!from || !to) {
-        return NextResponse.json(
-          { error: "bad_request", detail: "require either leaveId or (from & to)" },
-          { status: 400 }
-        );
-      }
-      dateStart = String(from);
-      dateEnd = String(to);
-
-      if (teacherUserId) {
-        const tRes = await g.supa
-          .from("teacher")
-          .select("teacher_id")
-          .eq("user_id", teacherUserId)
-          .maybeSingle();
-
-        if (tRes.error || !tRes.data) {
-          return NextResponse.json({ error: "teacher not found for teacherUserId" }, { status: 404 });
-        }
-        teacherId = Number(tRes.data.teacher_id);
-      }
+  const leaveId = toPosInt(sp.get("leaveId"));
+  if (leaveId) {
+    const { data, error } = await supabaseAdmin
+      .from("leaverequest")
+      .select("user_id, date_start, date_end")
+      .eq("leave_request_id", leaveId)
+      .maybeSingle();
+    if (error) throw new HttpError(500, "DB_ERROR", error.message);
+    if (!data) throw new HttpError(404, "REQUEST_NOT_FOUND");
+    from = data.date_start as string;
+    to = data.date_end as string;
+    teacherId = await teacherIdOfUser(data.user_id as string);
+    if (!teacherId) throw new HttpError(404, "NOT_TEACHER");
+  } else {
+    from = sp.get("from") ?? "";
+    to = sp.get("to") ?? "";
+    if (!isISODate(from) || !isISODate(to)) throw new HttpError(400, "INVALID_DATE");
+    const teacherUserId = sp.get("teacherUserId");
+    if (teacherUserId) {
+      teacherId = await teacherIdOfUser(teacherUserId);
+      if (!teacherId) throw new HttpError(404, "NOT_TEACHER");
     }
-
-    // ===== ดึงสอนแทนในช่วงวัน =====
-    // - เลือก fields ที่จำเป็น + join ตารางหลักๆ ตามสคีมา
-    // - กรองวันด้วยช่วง 00:00:00..23:59:59
-    const subs = await g.supa
-      .from("substituteuserteaching")
-      .select(`
-        substitute_teaching_id,
-        date_time,
-        substitute_user_id,
-        teaching_schedule_id,
-        teachingschedule:teaching_schedule_id (
-          teaching_schedule_id,
-          period_number,
-          start_time,
-          teacher_id,
-          subject:subject_id (
-            subject_id,
-            subject_name
-          ),
-          classroom:classroom_id (
-            classroom_id,
-            classroom_name
-          ),
-          teacher:teacher_id (
-            teacher_id,
-            user_id:user_id (
-              user_id,
-              prename,
-              name,
-              surname
-            )
-          )
-        ),
-        substitute_user:substitute_user_id (
-          user_id,
-          prename,
-          name,
-          surname
-        )
-      `)
-      .gte("date_time", `${dateStart} 00:00:00`)
-      .lte("date_time", `${dateEnd} 23:59:59`)
-      .order("date_time", { ascending: true });
-
-    if (subs.error) {
-      return NextResponse.json({ error: subs.error.message }, { status: 500 });
-    }
-
-    // ===== ถ้ากำหนด teacherId ให้ filter ให้เหลือเฉพาะตารางของครูคนนั้น =====
-    const rows = (subs.data || []).filter((r: any) => {
-      if (!teacherId) return true;
-      const tsTeacherId = r?.teachingschedule?.teacher?.teacher_id ?? null;
-      return Number(tsTeacherId) === Number(teacherId);
-    });
-
-    // ===== map response =====
-    const items = rows.map((r: any) => {
-      const dt = String(r.date_time || "");
-      const date = dt.slice(0, 10);
-      const time = dt.slice(11, 16); // HH:MM
-      const ts = r.teachingschedule ?? null;
-
-      return {
-        id: Number(r.substitute_teaching_id),
-        date,
-        time,
-        tsId: ts?.teaching_schedule_id ?? r.teaching_schedule_id ?? null,
-        period: ts?.period_number ?? null,
-        subject: ts?.subject?.subject_name ?? "",
-        classroom: ts?.classroom?.classroom_name ?? "",
-        leaver: fullName(ts?.teacher?.user_id ?? null),        // เจ้าของตาราง (ผู้ลา)
-        substitute: fullName(r?.substitute_user ?? null),      // ผู้สอนแทน
-      };
-    });
-
-    return NextResponse.json({ items });
-  } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message || e) }, { status: 500 });
   }
-}
+
+  let q = supabaseAdmin
+    .from("substituteuserteaching")
+    .select(
+      `substitute_teaching_id, date_time, teaching_schedule_id,
+       substitute:substitute_user_id ( prename, name, surname ),
+       ts:teaching_schedule_id${teacherId ? "!inner" : ""} (
+         period_number, teacher_id,
+         subject:subject_id ( subject_name ),
+         classroom:classroom_id ( classroom_name ),
+         teacher:teacher_id ( user:user_id ( prename, name, surname ) )
+       )`,
+      { count: "exact" }
+    )
+    .gte("date_time", `${from} 00:00:00`)
+    .lte("date_time", `${to} 23:59:59`)
+    .order("date_time", { ascending: true });
+  if (teacherId) q = q.eq("ts.teacher_id", teacherId);
+
+  const start = (page - 1) * pageSize;
+  const { data, error, count } = await q.range(start, start + pageSize - 1);
+  if (error) throw new HttpError(500, "DB_ERROR", error.message);
+
+  const items = ((data ?? []) as unknown as Row[]).map((r) => ({
+    id: r.substitute_teaching_id,
+    date: String(r.date_time).slice(0, 10),
+    time: String(r.date_time).slice(11, 16),
+    tsId: r.teaching_schedule_id,
+    period: r.ts?.period_number ?? null,
+    subject: r.ts?.subject?.subject_name ?? "",
+    classroom: r.ts?.classroom?.classroom_name ?? "",
+    leaver: fullName(r.ts?.teacher?.user),
+    substitute: fullName(r.substitute),
+  }));
+
+  const total = count ?? items.length;
+  return json({ items, total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)) });
+});

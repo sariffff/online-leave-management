@@ -1,21 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { route, json, readJson } from "@/lib/http";
+import { setActive } from "@/lib/admin/users";
+import { cleanStr } from "@/lib/validate";
+import { ROLE } from "@/lib/roles";
 
-export async function PUT(req: NextRequest) {
-  try {
-    const { user_id } = await req.json();
-    if (!user_id) return NextResponse.json({ error: "user_id is required" }, { status: 400 });
+export const runtime = "nodejs";
 
-    const { error } = await supabaseAdmin
-      .from("users")
-      .update({ is_active: true })
-      .eq("user_id", user_id);
-
-    if (error) throw error;
-
-    return NextResponse.json({ message: "ผู้ใช้ถูกเปิดใช้งานเรียบร้อยแล้ว" });
-  } catch (err: any) {
-    console.error(err);
-    return NextResponse.json({ error: err.message || "เกิดข้อผิดพลาด" }, { status: 500 });
-  }
-}
+export const PUT = route([ROLE.admin], async ({ req }) => {
+  const body = await readJson<{ user_id?: unknown }>(req);
+  await setActive(cleanStr(body.user_id, 64), true);
+  return json({ ok: true });
+});

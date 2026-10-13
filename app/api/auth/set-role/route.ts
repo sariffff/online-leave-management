@@ -1,58 +1,25 @@
-// app/api/auth/set-role/route.ts
-import { NextResponse, type NextRequest } from "next/server";
-import { createSupabaseServerRoute } from "@/lib/supabaseServer";
+import { route, json, HttpError, readJson } from "@/lib/http";
+import { toPosInt } from "@/lib/validate";
+import { ROLE_HOME, type RoleName } from "@/lib/roles";
 
-export async function POST(req: NextRequest) {
-  // ใช้ res ตัวนี้เป็นภาชนะให้ Supabase เขียน Set-Cookie
-  const base = NextResponse.json({});
-  const supabase = createSupabaseServerRoute(req, base); // ✅ ต้องส่ง req,res
+export const runtime = "nodejs";
 
-  // ✅ โครงสร้างที่ถูกต้อง
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-  if (error || !user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+/** เลือกบทบาทที่ใช้งาน (cookie ใช้กับ UI เท่านั้น — การอนุญาตจริงตรวจจาก DB ทุกครั้ง) */
+export const POST = route("any", async ({ g, req }) => {
+  const body = await readJson<{ roleId?: unknown }>(req);
+  const roleId = toPosInt(body.roleId);
+  if (!roleId) throw new HttpError(400, "ROLE_REQUIRED");
 
-  // ✅ parse body ปลอดภัย
-  let body: any;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
-  }
-  const roleId = Number(body?.roleId);
-  if (!roleId) {
-    return NextResponse.json({ error: "Role is required" }, { status: 400 });
-  }
+  const role = g.roles.find((r) => r.id === roleId);
+  if (!role) throw new HttpError(403, "Forbidden");
 
-  // ✅ ตรวจว่า user มี role นี้จริง
-  const { data: roles, error: rolesError } = await supabase
-    .from("userrole")
-    .select("role_type_id")
-    .eq("user_id", user.id);
-
-  if (rolesError) {
-    return NextResponse.json({ error: "Role check failed" }, { status: 500 });
-  }
-  const hasRole = roles?.some((r) => Number(r.role_type_id) === roleId);
-  if (!hasRole) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  // ✅ สร้าง response จริงโดย “พก” headers จาก base (ที่ Supabase อาจเขียนคุกกี้ไว้)
-  const res = NextResponse.json({ success: true }, { headers: base.headers });
-
-  // ✅ ตั้ง active_role ลง response นี้ (ฝั่ง client ไม่ต้องอ่านได้ เพราะใช้ guard/middleware อ่านฝั่ง server)
+  const res = json({ success: true, home: ROLE_HOME[role.name as RoleName] ?? "/" });
   res.cookies.set("active_role", String(roleId), {
     httpOnly: true,
-    secure: true,
-    sameSite: "lax", // แนะนำ Lax เพื่อให้ส่งคุกกี้บนการนำทางในไซต์เดียวกัน
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
     maxAge: 60 * 60 * 8,
     path: "/",
   });
-
   return res;
-}
+});
