@@ -292,7 +292,13 @@ export async function deleteOwnLeave(userId: string, id: number) {
 }
 
 /* ---------------- ธุรการ ---------------- */
+/** ไม่ผ่าน/ไม่อนุมัติ ต้องบอกเหตุผล ผู้ยื่นจะได้รู้ว่าต้องแก้อะไร */
+function requireReason(note: string) {
+  if (!note.trim()) throw new HttpError(422, "REASON_REQUIRED");
+}
+
 export async function reviewLeave(reviewerId: string, id: number, decision: "reviewed" | "failed", note: string) {
+  if (decision === "failed") requireReason(note);
   const row = await transition(
     id,
     "pending",
@@ -305,6 +311,7 @@ export async function reviewLeave(reviewerId: string, id: number, decision: "rev
 
 /* ---------------- ผู้อำนวยการ ---------------- */
 export async function approveLeave(approverId: string, id: number, decision: "approved" | "rejected", note: string) {
+  if (decision === "rejected") requireReason(note);
   const cur = await getRequest(id);
   const row = await transition(
     id,

@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { apiFetch } from "@/lib/client/api";
 import { useHolidays } from "@/lib/client/useHolidays";
 import { useLeaveTypes } from "@/lib/client/useLeaveTypes";
+import ThaiDateInput from "@/components/shared/ThaiDateInput";
 import { countLeaveDays } from "@/lib/leave/days";
 import { HALF_OPTIONS, type HalfType } from "@/lib/leave/status";
 
@@ -140,12 +141,12 @@ export default function CreateLeaveModal({ open, onClose, onSuccess }: { open: b
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="grid gap-2">
-              <Label>วันที่เริ่ม</Label>
-              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              <Label htmlFor="dir-start">วันที่เริ่ม</Label>
+              <ThaiDateInput id="dir-start" aria-label="วันที่เริ่ม" value={startDate} onChange={setStartDate} />
             </div>
             <div className="grid gap-2">
-              <Label>วันที่สิ้นสุด</Label>
-              <Input type="date" value={endDate} min={startDate || undefined} onChange={(e) => setEndDate(e.target.value)} />
+              <Label htmlFor="dir-end">วันที่สิ้นสุด</Label>
+              <ThaiDateInput id="dir-end" aria-label="วันที่สิ้นสุด" value={endDate} min={startDate || undefined} onChange={setEndDate} />
             </div>
             <div className="grid gap-2">
               <Label>ช่วงวันเริ่ม</Label>

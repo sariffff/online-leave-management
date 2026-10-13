@@ -1025,6 +1025,14 @@ try {
     expectStatus(await post(U.sup, "/api/supervisor/leave-review", { action: "approve", payload: { id: ids.L1 } }), 400);
     expectStatus(await post(U.sup, "/api/supervisor/leave-review", { action: "reviewed", payload: {} }), 400);
   });
+  await t("SV-04a", "ไม่ผ่านโดยไม่ใส่เหตุผล (ว่าง/เว้นวรรค) → 422 REASON_REQUIRED และสถานะไม่เปลี่ยน", async () => {
+    for (const note of [undefined, "   "]) {
+      const r = await post(U.sup, "/api/supervisor/leave-review", { action: "fail", payload: { id: ids.L2, note } });
+      expect(r.status === 422 && r.json.error === "REASON_REQUIRED", show(r));
+    }
+    const st = (await admin.from("leaverequest").select("status").eq("leave_request_id", ids.L2).single()).data.status;
+    expect(st === "pending", `สถานะ ${st}`);
+  });
   await t("SV-04", "ตีกลับ (fail) ใบครึ่งวัน พร้อมหมายเหตุ → failed", async () => {
     const r = await post(U.sup, "/api/supervisor/leave-review", { action: "fail", payload: { id: ids.L2, note: "แนบใบรับรองแพทย์" } });
     expect(r.status === 200 && r.json.status === "failed", show(r));
@@ -1080,6 +1088,10 @@ try {
   await t("DR-04", "อนุมัติซ้ำ → 409; อนุมัติใบ pending โดยตรง → 409", async () => {
     expectStatus(await post(U.dir, "/api/director/leave-approve", { action: "approved", payload: { id: ids.L1 } }), 409);
     if (ids.Lpast) expectStatus(await post(U.dir, "/api/director/leave-approve", { action: "approved", payload: { id: ids.Lpast } }), 409);
+  });
+  await t("DR-05a", "ไม่อนุมัติโดยไม่ใส่เหตุผล → 422 REASON_REQUIRED (หมายเหตุของธุรการไม่นับเป็นเหตุผลของ ผอ.)", async () => {
+    const r = await post(U.dir, "/api/director/leave-approve", { action: "rejected", payload: { id: ids.L2 } });
+    expect(r.status === 422 && r.json.error === "REASON_REQUIRED", show(r));
   });
   await t("DR-05", "ไม่อนุมัติใบครึ่งวัน → rejected และไม่นับในโควตา", async () => {
     const r = await post(U.dir, "/api/director/leave-approve", { action: "rejected", payload: { id: ids.L2, note: "ทดสอบ" } });

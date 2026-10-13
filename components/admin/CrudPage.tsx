@@ -1,5 +1,6 @@
 "use client";
 
+import ThaiDateInput from "@/components/shared/ThaiDateInput";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import toast from "react-hot-toast";
 import { FaEdit, FaPlus, FaSearch, FaTrashAlt } from "react-icons/fa";
@@ -283,6 +284,8 @@ export default function CrudPage(props: Props) {
                     <option value="">{f.emptyLabel ?? "— ไม่ระบุ —"}</option>
                     {(options[f.name] ?? []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
+                ) : f.type === "date" ? (
+                  <ThaiDateInput id={f.name} value={values[f.name] ?? ""} onChange={(v) => setValues((s) => ({ ...s, [f.name]: v }))} />
                 ) : (
                   <Input id={f.name} type={f.type ?? "text"} placeholder={f.placeholder} value={values[f.name] ?? ""} onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))} />
                 )}

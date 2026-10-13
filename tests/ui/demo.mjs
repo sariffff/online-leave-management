@@ -236,9 +236,20 @@ try {
       await page.getByRole("button", { name: /^ลาป่วย/ }).click();
       await expectVisible(page.getByText("กรอกข้อมูลการลา"), "ฟอร์มขั้นที่ 2");
     });
-    await step(page, "user", `กรอกวันที่ลา ${LEAVE_DATE} และเหตุผล`, async () => {
-      await page.getByLabel("วันที่เริ่มลา", { exact: true }).fill(LEAVE_DATE);
-      await page.getByLabel("วันที่สิ้นสุดการลา", { exact: true }).fill(LEAVE_DATE);
+    await step(page, "user", "วันที่เริ่ม: กดปุ่มปฏิทิน → เลือกเดือน/ปี พ.ศ. → กดวันที่ 16 (เสาร์-อาทิตย์/วันหยุดกดไม่ได้)", async () => {
+      await page.getByRole("button", { name: "เปิดปฏิทิน วันที่เริ่มลา" }).click();
+      await page.getByRole("combobox", { name: "เดือน" }).selectOption({ label: "พฤศจิกายน" });
+      await page.getByRole("combobox", { name: "ปี พ.ศ." }).selectOption({ label: "2569" });
+      await expectVisible(page.getByRole("gridcell", { name: /^15 พฤศจิกายน 2569 \(/ }), "วันอาทิตย์ 15 ถูกปิดไว้");
+      await page.waitForTimeout(600);
+      await page.getByRole("gridcell", { name: "16 พฤศจิกายน 2569", exact: true }).click();
+      const v = await page.getByLabel("วันที่เริ่มลา", { exact: true }).inputValue();
+      if (v !== "16/11/2569") throw new Error(`ช่องแสดง ${v}`);
+      return "ช่องแสดง 16/11/2569 (วัน/เดือน/พ.ศ.)";
+    });
+    await step(page, "user", "วันที่สิ้นสุด: พิมพ์ 16/11/2569 เอง และกรอกเหตุผล", async () => {
+      // พิมพ์แบบ พ.ศ. (LEAVE_DATE = 2026-11-16)
+      await page.getByLabel("วันที่สิ้นสุดการลา", { exact: true }).fill(LEAVE_DATE.split("-").reverse().map((x, i) => (i === 2 ? Number(x) + 543 : x)).join("/"));
       await page.getByPlaceholder("โปรดระบุเหตุผลการลา...").fill(REASON);
       await expectVisible(page.getByText("1 วัน", { exact: true }), "ระบบคำนวณจำนวนวันลา = 1 วัน");
       return "ระบบคำนวณจำนวนวันลา = 1 วัน";
@@ -274,10 +285,14 @@ try {
       const badge = await page.locator("#app-sidebar").getByText(/^\d+$/).first().textContent();
       return `ตัวเลขรอตรวจบนเมนู = ${badge}`;
     });
-    await step(page, "supervisor", "กด \"ตรวจสอบ\" → ใส่หมายเหตุ → กด \"ผ่าน\"", async () => {
+    await step(page, "supervisor", "กด \"ตรวจสอบ\" → ลองกด \"ไม่ผ่าน\" โดยไม่ใส่เหตุผล (ระบบเตือน) → ใส่หมายเหตุ → กด \"ผ่าน\"", async () => {
       await page.locator("tr", { hasText: `${PREFIX}สมศรี` }).getByRole("button", { name: "ตรวจสอบ" }).click();
       const dlg = page.getByRole("dialog");
       await expectVisible(dlg.getByText(REASON), "รายละเอียดใบลาในหน้าต่าง");
+      // กด "ไม่ผ่าน" โดยไม่ใส่เหตุผล → ระบบเตือน (ไม่ส่ง)
+      await dlg.getByRole("button", { name: "ไม่ผ่าน", exact: true }).click();
+      await expectVisible(dlg.getByText("กรุณาระบุเหตุผลที่ไม่ผ่าน"), "คำเตือนต้องใส่เหตุผล");
+      await page.waitForTimeout(800);
       await dlg.getByRole("textbox").fill("เอกสารครบถ้วน");
       await dlg.getByRole("button", { name: "ผ่าน", exact: true }).click();
       await expectVisible(page.getByText("ผ่านเรียบร้อย"), "แจ้งเตือนผ่านเรียบร้อย");

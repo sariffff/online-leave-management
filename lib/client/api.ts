@@ -57,6 +57,7 @@ export const ERROR_TH: Record<string, string> = {
   TOO_MANY_FILES: "แนบไฟล์เกินจำนวนที่กำหนด",
   SUBSTITUTE_NOT_FREE: "ครูท่านนี้ไม่ว่างในคาบดังกล่าว",
   ALREADY_ASSIGNED: "คาบนี้มีผู้สอนแทนแล้ว",
+  REASON_REQUIRED: "กรุณาระบุเหตุผล เพื่อให้ผู้ยื่นทราบว่าต้องแก้ไขอะไร",
   SUBSTITUTION_NOT_FOUND: "ไม่พบการมอบหมายนี้ (อาจถูกยกเลิกไปแล้ว)",
   DATE_NOT_MATCH_SCHEDULE: "วันที่ไม่ตรงกับวันสอนของคาบนี้",
   CANNOT_SUBSTITUTE_SELF: "ไม่สามารถให้ผู้ลาสอนแทนตัวเองได้",

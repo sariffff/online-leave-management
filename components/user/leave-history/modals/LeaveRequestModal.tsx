@@ -22,6 +22,7 @@ import { useLeaveTypes } from "@/lib/client/useLeaveTypes";
 import { acceptOf, checkAttachment, defaultLeaveRule, kindsText } from "@/lib/settings-schema";
 import { usePublicSettings } from "@/components/shell/SettingsContext";
 import { useConfirm } from "@/components/shared/ConfirmDialog";
+import ThaiDateInput from "@/components/shared/ThaiDateInput";
 
 const selectCls = "w-full h-10 px-3 bg-white border rounded-md text-sm";
 
@@ -68,19 +69,13 @@ export default function LeaveRequestModal({
     [form, holidays, rule.countMode]
   );
 
-  function pickDate(field: "startDate" | "endDate", raw: string, el: HTMLInputElement) {
-    el.setCustomValidity("");
+  const [dateErr, setDateErr] = useState<{ startDate?: string; endDate?: string }>({});
+  const dayNote = (iso: string) => (isNonWorkingISO(iso, holidays) ? holidays.get(iso) || "วันหยุดสุดสัปดาห์" : null);
+  function pickDate(field: "startDate" | "endDate", raw: string) {
+    setDateErr({});
     if (!raw) return setForm((f) => ({ ...f, [field]: "" }));
-    if (isNonWorkingISO(raw, holidays)) {
-      el.setCustomValidity("ห้ามเลือกวันเสาร์-อาทิตย์หรือวันหยุดราชการ");
-      el.reportValidity();
-      return;
-    }
-    if (field === "endDate" && form.startDate && raw < form.startDate) {
-      el.setCustomValidity("วันที่สิ้นสุดต้องไม่น้อยกว่าวันที่เริ่มลา");
-      el.reportValidity();
-      return;
-    }
+    if (isNonWorkingISO(raw, holidays)) return setDateErr({ [field]: "ห้ามเลือกวันเสาร์-อาทิตย์หรือวันหยุดราชการ" });
+    if (field === "endDate" && form.startDate && raw < form.startDate) return setDateErr({ endDate: "วันที่สิ้นสุดต้องไม่น้อยกว่าวันที่เริ่มลา" });
     setForm((f) => ({ ...f, [field]: raw, endDate: field === "startDate" && f.endDate && f.endDate < raw ? "" : field === "endDate" ? raw : f.endDate }));
   }
 
@@ -157,8 +152,8 @@ export default function LeaveRequestModal({
                 <CardContent className="pt-6 space-y-4">
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div>
-                      <Label className="block mb-1">วันที่เริ่มลา</Label>
-                      <Input type="date" className="h-10" value={form.startDate} onChange={(e) => pickDate("startDate", e.target.value, e.currentTarget)} />
+                      <Label htmlFor="edit-start" className="block mb-1">วันที่เริ่มลา</Label>
+                      <ThaiDateInput id="edit-start" aria-label="วันที่เริ่มลา" value={form.startDate} onChange={(v) => pickDate("startDate", v)} error={dateErr.startDate} dayNote={dayNote} />
                     </div>
                     <div>
                       <Label className="block mb-1">ช่วงเวลาเริ่ม</Label>
@@ -167,8 +162,8 @@ export default function LeaveRequestModal({
                       </select>
                     </div>
                     <div>
-                      <Label className="block mb-1">วันที่สิ้นสุด</Label>
-                      <Input type="date" className="h-10" value={form.endDate} min={form.startDate || undefined} onChange={(e) => pickDate("endDate", e.target.value, e.currentTarget)} />
+                      <Label htmlFor="edit-end" className="block mb-1">วันที่สิ้นสุด</Label>
+                      <ThaiDateInput id="edit-end" aria-label="วันที่สิ้นสุด" value={form.endDate} min={form.startDate || undefined} onChange={(v) => pickDate("endDate", v)} error={dateErr.endDate} dayNote={dayNote} />
                     </div>
                     <div>
                       <Label className="block mb-1">ช่วงเวลาสิ้นสุด</Label>
