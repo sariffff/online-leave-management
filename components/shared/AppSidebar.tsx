@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronDown, ChevronRight, Clock, X } from "lucide-react";
 import { useNav } from "@/components/shell/NavContext";
+import { usePublicSettings } from "@/components/shell/SettingsContext";
 
 export type MenuItem = { title: string; href: string; badge?: number | null };
 export type MenuGroup = {
@@ -18,12 +19,11 @@ export type MenuGroup = {
 type Props = {
   title: string;
   subtitle: string;
-  /** เช่น "from-blue-600 to-indigo-600" */
-  gradient: string;
   menus: MenuGroup[];
   /** ถ้าไม่ส่ง จะไม่แสดงกล่อง "รอดำเนินการ" */
   pendingLabel?: string;
   pendingCount?: number | null;
+  /** ข้อความท้ายเมนู — ไม่ส่งจะใช้ค่าจากการตั้งค่าระบบ */
   footer?: string;
 };
 
@@ -40,9 +40,11 @@ function Badge({ count }: { count: number }) {
  *  - จอ ≥ lg (1024px): แสดงค้างด้านซ้าย
  *  - จอเล็กกว่า: เป็นลิ้นชักเลื่อนออกมา เปิดจากปุ่ม ☰ ใน header (ผ่าน NavContext)
  */
-export default function AppSidebar({ title, subtitle, gradient, menus, pendingLabel, pendingCount, footer }: Props) {
+export default function AppSidebar({ title, subtitle, menus, pendingLabel, pendingCount, footer }: Props) {
   const pathname = usePathname();
   const { open, setOpen, setHasNav } = useNav();
+  const { general } = usePublicSettings();
+  const footerText = footer ?? general.footerText;
   const [expanded, setExpanded] = useState<string[]>([]);
 
   useEffect(() => {
@@ -82,10 +84,10 @@ export default function AppSidebar({ title, subtitle, gradient, menus, pendingLa
           lg:static lg:z-auto lg:w-64 lg:max-w-none lg:translate-x-0 lg:border-r lg:border-gray-200 lg:shadow-none
           ${open ? "translate-x-0" : "-translate-x-full"}`}
       >
-        <div className={`flex items-start justify-between gap-2 shrink-0 p-4 bg-gradient-to-r ${gradient}`}>
+        <div className="flex items-start justify-between gap-2 p-4 shrink-0 bg-linear-to-r from-(--brand) to-(--brand-to)">
           <div className="min-w-0">
             <h2 className="text-lg font-bold text-white truncate">{title}</h2>
-            <p className="text-sm text-blue-100 truncate">{subtitle}</p>
+            <p className="text-sm truncate text-white/80">{subtitle}</p>
           </div>
           <button
             type="button"
@@ -173,7 +175,7 @@ export default function AppSidebar({ title, subtitle, gradient, menus, pendingLa
           </ul>
         </nav>
 
-        {footer && <div className="shrink-0 px-4 py-3 text-xs text-center text-gray-500 border-t border-gray-200 bg-gray-50">{footer}</div>}
+        {footerText && <div className="px-4 py-3 text-xs text-center text-gray-500 border-t border-gray-200 shrink-0 bg-gray-50">{footerText}</div>}
       </aside>
     </>
   );

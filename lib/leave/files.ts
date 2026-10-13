@@ -2,12 +2,13 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { HttpError } from "@/lib/http";
+import { getSettings } from "@/lib/settings";
+import { DEFAULT_SETTINGS, FILE_KINDS, checkAttachment, fileKindOf, type AttachmentSettings } from "@/lib/settings-schema";
 
 export const BUCKET = "leave-attachments";
 export const SIGN_TTL = 60 * 5;
-export const MAX_FILE_BYTES = 5 * 1024 * 1024;
-export const MAX_FILES = 5;
-export const ALLOWED_MIME = ["application/pdf", "image/jpeg", "image/png"] as const;
+// ขนาด/จำนวน/ชนิดไฟล์ ตั้งค่าได้ในหน้า "ตั้งค่าระบบ → ไฟล์แนบ" (ค่าเริ่มต้น 5MB, 5 ไฟล์, PDF/JPG/PNG)
+export const MAX_FILE_BYTES = DEFAULT_SETTINGS.attachments.maxFileMB * 1024 * 1024;
 
 export type LeaveFile = { name: string; path: string; url: string };
 
@@ -90,11 +91,11 @@ export async function signFilesBatch(
   return out;
 }
 
-export function validateUploads(files: File[]): void {
-  if (files.length > MAX_FILES) throw new HttpError(422, "TOO_MANY_FILES");
+export function validateUploads(files: File[], a: AttachmentSettings = DEFAULT_SETTINGS.attachments): void {
+  if (files.length > a.maxFiles) throw new HttpError(422, "TOO_MANY_FILES", { message: `แนบไฟล์ได้ไม่เกิน ${a.maxFiles} ไฟล์` });
   for (const f of files) {
-    if (f.size > MAX_FILE_BYTES) throw new HttpError(422, "FILE_TOO_LARGE", f.name);
-    if (!(ALLOWED_MIME as readonly string[]).includes(f.type)) throw new HttpError(422, "FILE_TYPE_NOT_ALLOWED", f.name);
+    const bad = checkAttachment(a, f);
+    if (bad) throw new HttpError(422, bad.code, { message: bad.message });
   }
 }
 
@@ -103,12 +104,18 @@ function extOf(file: File): string {
   const dot = n.lastIndexOf(".");
   const raw = dot >= 0 ? n.slice(dot + 1).toLowerCase().replace(/[^a-z0-9]/g, "") : "";
   if (raw) return `.${raw}`;
-  return file.type === "application/pdf" ? ".pdf" : file.type === "image/png" ? ".png" : ".jpg";
+  const kind = fileKindOf(file);
+  return kind ? FILE_KINDS[kind].ext[0] : ".bin";
+}
+
+/** ตรวจไฟล์ตามการตั้งค่าปัจจุบัน — เรียกก่อนบันทึกใบลา */
+export async function assertUploads(files: File[]): Promise<void> {
+  if (files.length) validateUploads(files, (await getSettings()).attachments);
 }
 
 /** อัปโหลดหลายไฟล์ลงโฟลเดอร์ของเจ้าของใบลา คืนรายการ key (ถ้าล้มเหลวจะลบไฟล์ที่ขึ้นไปแล้ว) */
 export async function uploadFiles(ownerId: string, files: File[]): Promise<string[]> {
-  validateUploads(files);
+  validateUploads(files, (await getSettings()).attachments);
   const stamp = Date.now();
   const keys: string[] = [];
 
@@ -117,7 +124,7 @@ export async function uploadFiles(ownerId: string, files: File[]): Promise<strin
     const key = `public/${ownerId}/${stamp}-${i}${extOf(f)}`;
     const { error } = await supabaseAdmin.storage.from(BUCKET).upload(key, f, {
       upsert: false,
-      contentType: f.type || "application/octet-stream",
+      contentType: f.type || (fileKindOf(f) ? FILE_KINDS[fileKindOf(f)!].mime : "application/octet-stream"),
     });
     if (error) {
       if (keys.length) await supabaseAdmin.storage.from(BUCKET).remove(keys);

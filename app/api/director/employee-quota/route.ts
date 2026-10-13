@@ -1,5 +1,6 @@
 import { route, json, HttpError } from "@/lib/http";
 import { computeQuota } from "@/lib/leave/quota";
+import { quotaForDisplay } from "@/lib/leave/types";
 import { normalizeFiscalYear } from "@/lib/format";
 import { getFiscalYearFromISO } from "@/utils/year";
 import { UUID_RE } from "@/lib/validate";
@@ -13,5 +14,5 @@ export const GET = route([ROLE.director], async ({ url }) => {
   if (!UUID_RE.test(userId)) throw new HttpError(400, "INVALID_USER");
   const fiscalYear =
     normalizeFiscalYear(url.searchParams.get("year")) ?? getFiscalYearFromISO(new Date().toISOString().slice(0, 10));
-  return json({ year: fiscalYear, items: await computeQuota(userId, fiscalYear) });
+  return json({ year: fiscalYear, items: await quotaForDisplay(await computeQuota(userId, fiscalYear)) });
 });

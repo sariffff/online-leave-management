@@ -8,7 +8,6 @@ export default function UserSidebar() {
     <AppSidebar
       title="ระบบการลา"
       subtitle="สำหรับบุคลากร"
-      gradient="from-blue-600 to-indigo-600"
       menus={[
         { title: "หน้าแรก", icon: Home, href: "/" },
         { title: "การลา", icon: FileText, href: "/leave-page" },
@@ -16,7 +15,6 @@ export default function UserSidebar() {
         { title: "วันลาคงเหลือ", icon: Wallet, href: "/leave-overview" },
         { title: "แดชบอร์ด", icon: LayoutDashboard, href: "/dashbord-user" },
       ]}
-      footer="© 2025 School Management"
     />
   );
 }

@@ -21,7 +21,7 @@ export async function middleware(req: NextRequest) {
   const isApi = pathname.startsWith("/api/");
 
   if (!session) {
-    if (PUBLIC_PAGES.has(pathname) || pathname === "/api/auth/logout") return res;
+    if (PUBLIC_PAGES.has(pathname) || pathname === "/api/auth/logout" || pathname === "/api/settings/public") return res;
     if (isApi) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     return NextResponse.redirect(new URL("/login", req.url));
   }

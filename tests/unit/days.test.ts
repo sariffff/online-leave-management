@@ -76,8 +76,8 @@ describe("countLeaveDays", () => {
   });
 });
 
-describe("partOfDay / periodPart / leaveCoversPeriod", async () => {
-  const { partOfDay, periodPart, leaveCoversPeriod } = await import("@/lib/leave/days");
+describe("partOfDay / leaveCoversPeriod", async () => {
+  const { partOfDay, leaveCoversPeriod } = await import("@/lib/leave/days");
   const single = (t: string) => ({ date_start: "2026-11-16", date_end: "2026-11-16", date_start_type: t });
   const multi = { date_start: "2026-11-16", date_end: "2026-11-18", date_start_type: "ครึ่งบ่าย", date_end_type: "ครึ่งเช้า" };
   it("D-30 วันเดียว: เต็มวัน/ครึ่งเช้า/ครึ่งบ่าย", () => {
@@ -90,13 +90,6 @@ describe("partOfDay / periodPart / leaveCoversPeriod", async () => {
     expect(partOfDay(multi, "2026-11-16")).toBe("pm");
     expect(partOfDay(multi, "2026-11-17")).toBe("full");
     expect(partOfDay(multi, "2026-11-18")).toBe("am");
-  });
-  it("D-32 periodPart ใช้เวลาเริ่มก่อน ไม่งั้นใช้เลขคาบ", () => {
-    expect(periodPart(1)).toBe("am");
-    expect(periodPart(4)).toBe("am");
-    expect(periodPart(5)).toBe("pm");
-    expect(periodPart(5, "11:30:00")).toBe("am");
-    expect(periodPart(2, "13:00")).toBe("pm");
   });
   it("D-33 leaveCoversPeriod", () => {
     expect(leaveCoversPeriod(single("ครึ่งบ่าย"), "2026-11-16", "am")).toBe(false);

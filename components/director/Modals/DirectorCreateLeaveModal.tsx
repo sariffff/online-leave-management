@@ -39,10 +39,18 @@ export default function CreateLeaveModal({ open, onClose, onSuccess }: { open: b
 
   const years = useMemo(() => [Number(startDate.slice(0, 4)), Number(endDate.slice(0, 4))].filter(Boolean), [startDate, endDate]);
   const { map: holidays } = useHolidays(years);
+  const typeRule = types.find((t) => String(t.leave_type_id) === leaveTypeId)?.rule;
+  const noHalf = typeRule ? !typeRule.allowHalfDay : false;
+  // ประเภทที่ลาครึ่งวันไม่ได้ → บังคับเต็มวัน (ส่งค่าเต็มวันจริง ไม่ใช่แค่แสดง)
+  useEffect(() => {
+    if (!noHalf) return;
+    setStartType("เต็มวัน");
+    setEndType("เต็มวัน");
+  }, [noHalf]);
 
   const { total, excluded } = useMemo(
-    () => countLeaveDays({ start: startDate, end: endDate, startType, endType, holidays }),
-    [startDate, endDate, startType, endType, holidays]
+    () => countLeaveDays({ start: startDate, end: endDate, startType, endType, holidays, mode: typeRule?.countMode }),
+    [startDate, endDate, startType, endType, holidays, typeRule?.countMode]
   );
 
   const filtered = useMemo(() => {
@@ -141,7 +149,7 @@ export default function CreateLeaveModal({ open, onClose, onSuccess }: { open: b
             </div>
             <div className="grid gap-2">
               <Label>ช่วงวันเริ่ม</Label>
-              <select className={selectCls} value={startType} onChange={(e) => setStartType(e.target.value as HalfType)}>
+              <select className={selectCls} value={startType} disabled={noHalf} onChange={(e) => setStartType(e.target.value as HalfType)}>
                 {HALF_OPTIONS.map((o) => (
                   <option key={o}>{o}</option>
                 ))}
@@ -149,7 +157,7 @@ export default function CreateLeaveModal({ open, onClose, onSuccess }: { open: b
             </div>
             <div className="grid gap-2">
               <Label>ช่วงวันสิ้นสุด</Label>
-              <select className={selectCls} value={endType} onChange={(e) => setEndType(e.target.value as HalfType)} disabled={!!startDate && startDate === endDate}>
+              <select className={selectCls} value={endType} onChange={(e) => setEndType(e.target.value as HalfType)} disabled={noHalf || (!!startDate && startDate === endDate)}>
                 {HALF_OPTIONS.map((o) => (
                   <option key={o}>{o}</option>
                 ))}

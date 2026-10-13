@@ -41,7 +41,7 @@ export default function LeaveFilters({
 }) {
   const [draft, setDraft] = useState<LeaveFilterValue>(value);
   const [expanded, setExpanded] = useState(false);
-  const types = useLeaveTypes();
+  const types = useLeaveTypes(true);
   const set = (patch: Partial<LeaveFilterValue>) => setDraft((d) => ({ ...d, ...patch }));
 
   useEffect(() => setDraft(value), [value]);

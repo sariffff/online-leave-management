@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, Calendar, CalendarX, GraduationCap, Home, School, Users } from "lucide-react";
+import { BookOpen, Calendar, CalendarX, GraduationCap, Home, School, Settings, Users } from "lucide-react";
 import AppSidebar, { type MenuGroup } from "@/components/shared/AppSidebar";
 
 const MENUS: MenuGroup[] = [
@@ -24,6 +24,7 @@ const MENUS: MenuGroup[] = [
   },
   { title: "จัดการตารางสอน", icon: Calendar, href: "/schedule-management" },
   { title: "จัดการวันหยุด", icon: CalendarX, href: "/holiday-management" },
+  { title: "ตั้งค่าระบบ", icon: Settings, href: "/settings" },
   {
     title: "ปีการศึกษา",
     icon: GraduationCap,
@@ -37,11 +38,9 @@ const MENUS: MenuGroup[] = [
 export default function Sidebar() {
   return (
     <AppSidebar
-      title="Admin Panel"
-      subtitle="ระบบจัดการโรงเรียน"
-      gradient="from-blue-600 to-purple-600"
+      title="ผู้ดูแลระบบ"
+      subtitle="จัดการข้อมูลและตั้งค่าระบบ"
       menus={MENUS}
-      footer="© 2025 School Management"
     />
   );
 }

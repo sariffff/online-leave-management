@@ -18,6 +18,9 @@ import { useHolidays } from "@/lib/client/useHolidays";
 import { countLeaveDays, isNonWorkingISO } from "@/lib/leave/days";
 import { HALF_OPTIONS, OWNER_EDITABLE, normalizeHalf, type HalfType } from "@/lib/leave/status";
 import { thaiDate } from "@/lib/format";
+import { useLeaveTypes } from "@/lib/client/useLeaveTypes";
+import { acceptOf, checkAttachment, defaultLeaveRule, kindsText } from "@/lib/settings-schema";
+import { usePublicSettings } from "@/components/shell/SettingsContext";
 
 const selectCls = "w-full h-10 px-3 bg-white border rounded-md text-sm";
 
@@ -34,6 +37,9 @@ export default function LeaveRequestModal({
   onChanged: () => void;
 }) {
   const editable = !!item && (OWNER_EDITABLE as readonly string[]).includes(item.status_code);
+  const types = useLeaveTypes(true);
+  const attach = usePublicSettings().attachments;
+  const rule = types.find((t) => t.leave_type_id === item?.leaveTypeId)?.rule ?? defaultLeaveRule(item?.leaveTypeId ?? 0);
   const [tab, setTab] = useState<"detail" | "edit">("detail");
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -56,8 +62,8 @@ export default function LeaveRequestModal({
   const years = useMemo(() => [Number(form.startDate.slice(0, 4)), Number(form.endDate.slice(0, 4))].filter(Boolean), [form.startDate, form.endDate]);
   const { map: holidays, loading: loadingHolidays } = useHolidays(years);
   const { total, excluded } = useMemo(
-    () => countLeaveDays({ start: form.startDate, end: form.endDate, startType: form.startType, endType: form.endType, holidays }),
-    [form, holidays]
+    () => countLeaveDays({ start: form.startDate, end: form.endDate, startType: form.startType, endType: form.endType, holidays, mode: rule.countMode }),
+    [form, holidays, rule.countMode]
   );
 
   function pickDate(field: "startDate" | "endDate", raw: string, el: HTMLInputElement) {
@@ -81,9 +87,8 @@ export default function LeaveRequestModal({
     if (!form.startDate || !form.endDate) return toast.error("กรุณาเลือกช่วงวันลาให้ครบ");
     if (!form.reason.trim()) return toast.error("กรุณากรอกเหตุผลการลา");
     if (total <= 0) return toast.error("ช่วงวันที่เลือกไม่มีวันทำการ");
-    if (file && (file.size > 5 * 1024 * 1024 || !["application/pdf", "image/jpeg", "image/png"].includes(file.type))) {
-      return toast.error("ไฟล์ต้องเป็น PDF/JPG/PNG ขนาดไม่เกิน 5MB");
-    }
+    const badFile = file && checkAttachment(attach, file);
+    if (badFile) return toast.error(badFile.message);
 
     const fd = new FormData();
     fd.append("reason", form.reason.trim());
@@ -153,7 +158,7 @@ export default function LeaveRequestModal({
                     </div>
                     <div>
                       <Label className="block mb-1">ช่วงเวลาเริ่ม</Label>
-                      <select className={selectCls} value={form.startType} onChange={(e) => setForm((f) => ({ ...f, startType: e.target.value as HalfType }))}>
+                      <select className={selectCls} value={form.startType} disabled={!rule.allowHalfDay} onChange={(e) => setForm((f) => ({ ...f, startType: e.target.value as HalfType }))}>
                         {HALF_OPTIONS.map((o) => <option key={o}>{o}</option>)}
                       </select>
                     </div>
@@ -163,7 +168,7 @@ export default function LeaveRequestModal({
                     </div>
                     <div>
                       <Label className="block mb-1">ช่วงเวลาสิ้นสุด</Label>
-                      <select className={selectCls} value={form.endType} disabled={form.startDate === form.endDate} onChange={(e) => setForm((f) => ({ ...f, endType: e.target.value as HalfType }))}>
+                      <select className={selectCls} value={form.endType} disabled={form.startDate === form.endDate || !rule.allowHalfDay} onChange={(e) => setForm((f) => ({ ...f, endType: e.target.value as HalfType }))}>
                         {HALF_OPTIONS.map((o) => <option key={o}>{o}</option>)}
                       </select>
                     </div>
@@ -200,8 +205,8 @@ export default function LeaveRequestModal({
                   <div className="space-y-2">
                     <Label className="block mb-1">ไฟล์แนบเดิม</Label>
                     <FileList files={item.files} />
-                    <Label className="block pt-2 mb-1">แทนที่ไฟล์แนบ (PDF/JPG/PNG ไม่เกิน 5MB)</Label>
-                    <Input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                    <Label className="block pt-2 mb-1">แทนที่ไฟล์แนบ ({kindsText(attach)} ไม่เกิน {attach.maxFileMB}MB)</Label>
+                    <Input type="file" accept={acceptOf(attach)} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
                   </div>
                 </CardContent>
               </Card>

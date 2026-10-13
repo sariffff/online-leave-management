@@ -31,8 +31,9 @@ export function holidayMapFrom(list: ReadonlyArray<{ start: string; summary?: st
 }
 
 /**
- * นับวันทำการ (ตัดเสาร์-อาทิตย์และวันหยุด) พร้อมหักครึ่งวันของวันแรก/วันสุดท้าย
- * คำนวณด้วย UTC เพื่อไม่ให้ timezone ทำให้วันเลื่อน
+ * นับวันลา พร้อมหักครึ่งวันของวันแรก/วันสุดท้าย — คำนวณด้วย UTC เพื่อไม่ให้ timezone ทำให้วันเลื่อน
+ *  - mode "working" (ค่าเริ่มต้น): ตัดเสาร์-อาทิตย์และวันหยุด
+ *  - mode "calendar": นับทุกวันรวมวันหยุด (เช่น ลาคลอดบุตรตามที่ตั้งค่าไว้)
  */
 export function countLeaveDays(input: {
   start: string;
@@ -40,8 +41,12 @@ export function countLeaveDays(input: {
   startType?: string | null;
   endType?: string | null;
   holidays?: HolidayMap;
+  mode?: "working" | "calendar";
 }): { total: number; excluded: ExcludedDay[] } {
-  const { start, end, holidays } = input;
+  const { start, end } = input;
+  const calendar = input.mode === "calendar";
+  // นับวันปฏิทิน = ไม่มีวันไหนถูกตัด
+  const holidays = calendar ? undefined : input.holidays;
   if (!start || !end) return { total: 0, excluded: [] };
 
   const s = parseISO(start);
@@ -53,7 +58,9 @@ export function countLeaveDays(input: {
 
   for (let t = s; t <= e; t += DAY_MS) {
     const iso = toISO(t);
-    if (isWeekendISO(iso)) {
+    if (calendar) {
+      working += 1;
+    } else if (isWeekendISO(iso)) {
       excluded.push({ date: iso, isHoliday: false, name: "วันหยุดสุดสัปดาห์" });
     } else if (holidays?.has(iso)) {
       excluded.push({ date: iso, isHoliday: true, name: holidays.get(iso) || "วันหยุดราชการ" });
@@ -72,8 +79,9 @@ export function countLeaveDays(input: {
     return { total: startType === "เต็มวัน" ? 1 : 0.5, excluded };
   }
 
-  if (startType !== "เต็มวัน" && !isNonWorkingISO(start, holidays)) working -= 0.5;
-  if (endType !== "เต็มวัน" && !isNonWorkingISO(end, holidays)) working -= 0.5;
+  const offDay = (iso: string) => !calendar && isNonWorkingISO(iso, holidays);
+  if (startType !== "เต็มวัน" && !offDay(start)) working -= 0.5;
+  if (endType !== "เต็มวัน" && !offDay(end)) working -= 0.5;
 
   return { total: Math.max(0, Math.round(working * 2) / 2), excluded };
 }
@@ -96,12 +104,6 @@ export function partOfDay(l: LeaveSpan, date: string): DayPart | null {
   if (date === l.date_start && st !== "เต็มวัน") return "pm";
   if (date === l.date_end && et !== "เต็มวัน") return "am";
   return "full";
-}
-
-/** คาบนี้อยู่ช่วงเช้าหรือบ่าย — ใช้เวลาเริ่มถ้ามี ไม่งั้นใช้เลขคาบ (คาบ 1–4 เช้า ตาม lib/periods.ts) */
-export function periodPart(period: number, startTime?: string | null): "am" | "pm" {
-  if (startTime && /^\d{2}:\d{2}/.test(startTime)) return startTime.slice(0, 5) < "12:00" ? "am" : "pm";
-  return period <= 4 ? "am" : "pm";
 }
 
 /** ใบลานี้ทำให้ไม่อยู่ในคาบนั้นหรือไม่ */

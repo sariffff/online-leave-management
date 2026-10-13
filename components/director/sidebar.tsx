@@ -10,7 +10,6 @@ export default function DirectorLeaveSidebar() {
     <AppSidebar
       title="ผู้อำนวยการ"
       subtitle="อนุมัติการลา"
-      gradient="from-blue-600 to-indigo-600"
       pendingLabel="รออนุมัติ"
       pendingCount={counts.approve}
       menus={[
@@ -18,7 +17,6 @@ export default function DirectorLeaveSidebar() {
         { title: "ประวัติการอนุมัติ", icon: HistoryIcon, href: "/approved-history" },
         { title: "แดชบอร์ด", icon: LayoutDashboard, href: "/dashboard" },
       ]}
-      footer="ระบบอนุมัติการลา v1.0.0"
     />
   );
 }

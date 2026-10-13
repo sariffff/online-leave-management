@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { usePublicSettings } from "@/components/shell/SettingsContext";
 
 /** แปลงข้อความ error ของ Supabase Auth เป็นภาษาไทย */
 function thaiAuthError(message: string): string {
@@ -26,6 +27,7 @@ export default function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const { general } = usePublicSettings();
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -50,11 +52,16 @@ export default function LoginForm() {
   return (
     <div className="w-full max-w-md p-6 bg-white border border-gray-200 shadow-lg sm:p-8 rounded-2xl">
       <div className="mb-6 text-center">
-        <div className="flex items-center justify-center w-12 h-12 mx-auto mb-3 text-white bg-blue-600 rounded-full">
-          <LogIn className="w-6 h-6" />
-        </div>
+        {general.logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={general.logoUrl} alt={general.schoolName} className="object-contain w-16 h-16 mx-auto mb-3" />
+        ) : (
+          <div className="flex items-center justify-center w-12 h-12 mx-auto mb-3 text-white rounded-full bg-(--brand)">
+            <LogIn className="w-6 h-6" />
+          </div>
+        )}
         <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">เข้าสู่ระบบ</h1>
-        <p className="mt-1 text-sm text-gray-600">ระบบการลาของบุคลากร โรงเรียนบ้านตาสา</p>
+        <p className="mt-1 text-sm text-gray-600">{general.systemName}</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
@@ -101,7 +108,7 @@ export default function LoginForm() {
           </p>
         )}
 
-        <Button type="submit" disabled={loading} className="w-full h-11 text-base bg-blue-600 hover:bg-blue-700">
+        <Button type="submit" disabled={loading} className="w-full text-base text-white h-11 bg-(--brand) hover:opacity-90">
           {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
           {loading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
         </Button>

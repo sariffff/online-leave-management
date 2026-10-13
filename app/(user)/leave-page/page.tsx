@@ -11,6 +11,7 @@ import { limitText, toFormData, toLeaveType, type LeaveType, type UILeaveFormDat
 import { apiFetch } from "@/lib/client/api";
 import { fullName } from "@/lib/format";
 import { useLeaveTypes } from "@/lib/client/useLeaveTypes";
+import { describeRule } from "@/lib/leave/rules";
 
 const STEPS = [
   { id: 1, title: "เลือกประเภทการลา", icon: Edit3 },
@@ -135,6 +136,7 @@ export default function LeavePage() {
                   <div className={`inline-flex px-4 py-2 mb-3 text-sm font-bold rounded-full ${t.color}`}>{t.leave_type_name}</div>
                   <p className="mb-2 text-sm leading-relaxed text-gray-600">{t.description || t.note}</p>
                   <p className="text-xs text-gray-500">สิทธิ์: {limitText(t)}</p>
+                  {describeRule(t.rule).length > 0 && <p className="mt-1 text-xs text-gray-500">{describeRule(t.rule).join(" · ")}</p>}
                 </button>
               ))}
             </div>
