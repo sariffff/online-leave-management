@@ -8,12 +8,16 @@ import { useHolidays } from "@/lib/client/useHolidays";
 import { countLeaveDays, isNonWorkingISO } from "@/lib/leave/days";
 import { HALF_OPTIONS, type HalfType } from "@/lib/leave/status";
 import { getFiscalYearFromISO } from "@/utils/year";
+import { thaiDate } from "@/lib/format";
 
 type QuotaItem = { unlimited: boolean; total: number | null; used: number; reserved: number; available: number | null };
 
 const MAX_FILE = 5 * 1024 * 1024;
 const MIME = ["application/pdf", "image/jpeg", "image/png"];
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const todayISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 
 export default function Step2LeaveForm({
   selectedLeaveType,
@@ -71,7 +75,8 @@ export default function Step2LeaveForm({
     [form.startDate, form.endDate, form.startType, form.endType, holidays]
   );
 
-  const available = quota?.unlimited ? null : (quota?.available ?? 0);
+  // โหลดสิทธิ์ไม่สำเร็จ → ไม่บล็อกการยื่น (server ตรวจสิทธิ์อีกครั้งตอนบันทึก)
+  const available = !quota || quota.unlimited ? null : quota.available ?? 0;
   const overQuota = available !== null && totalDays > available;
   const needsCert = selectedLeaveType.leave_type_id === 1 && totalDays > 3 && form.attachments.length === 0;
 
@@ -120,14 +125,14 @@ export default function Step2LeaveForm({
   }
 
   const submit = () => validate() && onNext({ ...form, totalDays });
-  const inputCls = (bad?: string) => `flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${bad ? "border-red-500" : "border-gray-300"}`;
+  const inputCls = (bad?: string) => `min-w-0 flex-1 px-3 py-2 bg-white border rounded-lg focus:ring-2 focus:ring-blue-500 ${bad ? "border-red-500" : "border-gray-300"}`;
   const sameDay = !!form.startDate && form.startDate === form.endDate;
 
   return (
-    <div className="p-8 bg-white shadow-sm rounded-xl">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-4 bg-white border shadow-sm sm:p-8 rounded-xl">
+      <div className="flex flex-col gap-3 mb-6 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h3 className="text-xl font-bold text-gray-900">กรอกข้อมูลการลา</h3>
+          <h2 className="text-lg font-bold text-gray-900 sm:text-xl">กรอกข้อมูลการลา</h2>
           <p className="mt-1 text-sm text-gray-600">
             ประเภท: <span className="font-medium text-blue-600">{selectedLeaveType.leave_type_name}</span>
           </p>
@@ -145,12 +150,12 @@ export default function Step2LeaveForm({
               {!quota.unlimited && quota.reserved > 0 && <div className="mt-1 text-xs text-gray-500">รออนุมัติอยู่ {quota.reserved} วัน</div>}
             </>
           ) : null}
-          {quotaError && <div className="mt-1 text-xs text-red-600">{quotaError}</div>}
+          {quotaError && <div className="mt-1 text-xs text-red-600">โหลดสิทธิ์คงเหลือไม่สำเร็จ — ยังยื่นได้ ระบบจะตรวจสิทธิ์ให้ตอนส่ง</div>}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-        <div className="p-6 space-y-4 rounded-lg bg-gray-50">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:gap-8">
+        <div className="p-4 space-y-4 rounded-lg sm:p-6 bg-gray-50">
           <h4 className="flex items-center font-semibold text-gray-900">
             <CalendarIcon className="w-5 h-5 mr-2 text-blue-600" />
             ช่วงเวลาการลา
@@ -158,9 +163,9 @@ export default function Step2LeaveForm({
 
           <div>
             <label className="block mb-2 text-sm font-medium text-gray-700">วันที่เริ่มลา <span className="text-red-500">*</span></label>
-            <div className="flex gap-3">
-              <input type="date" value={form.startDate} onChange={(e) => pickDate("startDate", e.target.value, e.currentTarget)} className={inputCls(errors.startDate)} />
-              <select value={form.startType} onChange={(e) => set({ startType: e.target.value as HalfType })} disabled={!form.startDate} className="px-3 py-2 border border-gray-300 rounded-lg">
+            <div className="flex gap-2 sm:gap-3">
+              <input type="date" aria-label="วันที่เริ่มลา" value={form.startDate} onChange={(e) => pickDate("startDate", e.target.value, e.currentTarget)} className={inputCls(errors.startDate)} />
+              <select value={form.startType} onChange={(e) => set({ startType: e.target.value as HalfType })} disabled={!form.startDate} aria-label="ช่วงเวลาวันเริ่ม" className="w-28 px-2 py-2 bg-white border border-gray-300 rounded-lg shrink-0 sm:w-32">
                 {HALF_OPTIONS.map((o) => <option key={o}>{o}</option>)}
               </select>
             </div>
@@ -169,9 +174,9 @@ export default function Step2LeaveForm({
 
           <div>
             <label className="block mb-2 text-sm font-medium text-gray-700">วันที่สิ้นสุดการลา <span className="text-red-500">*</span></label>
-            <div className="flex gap-3">
-              <input type="date" min={form.startDate || undefined} value={form.endDate} onChange={(e) => pickDate("endDate", e.target.value, e.currentTarget)} className={inputCls(errors.endDate)} />
-              <select value={form.endType} onChange={(e) => set({ endType: e.target.value as HalfType })} disabled={sameDay || !form.endDate} className="px-3 py-2 border border-gray-300 rounded-lg">
+            <div className="flex gap-2 sm:gap-3">
+              <input type="date" aria-label="วันที่สิ้นสุดการลา" min={form.startDate || undefined} value={form.endDate} onChange={(e) => pickDate("endDate", e.target.value, e.currentTarget)} className={inputCls(errors.endDate)} />
+              <select value={form.endType} onChange={(e) => set({ endType: e.target.value as HalfType })} disabled={sameDay || !form.endDate} aria-label="ช่วงเวลาวันสิ้นสุด" className="w-28 px-2 py-2 bg-white border border-gray-300 rounded-lg shrink-0 sm:w-32">
                 {HALF_OPTIONS.map((o) => <option key={o}>{o}</option>)}
               </select>
             </div>
@@ -200,7 +205,7 @@ export default function Step2LeaveForm({
               <ul className="space-y-1 text-sm text-yellow-700">
                 {excluded.map((d) => (
                   <li key={d.date}>
-                    <span className="font-bold">{d.date}</span> — {d.name}
+                    <span className="font-bold">{thaiDate(d.date, true)}</span> — {d.name}
                   </li>
                 ))}
               </ul>
@@ -241,7 +246,10 @@ export default function Step2LeaveForm({
                 ลากไฟล์มาวาง หรือ
                 <label className="ml-1 text-blue-600 cursor-pointer hover:text-blue-700">
                   เลือกไฟล์
-                  <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => addFiles(e.target.files)} className="hidden" />
+                  <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => {
+                    addFiles(e.target.files);
+                    e.target.value = "";
+                  }} className="hidden" />
                 </label>
               </p>
               <p className="text-xs text-gray-500">PDF, JPG, PNG (สูงสุด 5MB ต่อไฟล์, ไม่เกิน 5 ไฟล์)</p>
@@ -267,11 +275,11 @@ export default function Step2LeaveForm({
         </div>
       </div>
 
-      <div className="flex justify-between mt-8">
-        <button onClick={onPrev} className="px-6 py-2 text-gray-700 transition-colors border border-gray-300 rounded-lg hover:bg-gray-50">
+      <div className="flex justify-between gap-3 mt-8">
+        <button onClick={onPrev} className="flex-1 sm:flex-none h-11 px-6 text-gray-700 transition-colors border border-gray-300 rounded-lg hover:bg-gray-50">
           ย้อนกลับ
         </button>
-        <button onClick={submit} className="flex items-center px-6 py-2 text-white transition-colors bg-blue-600 rounded-lg hover:bg-blue-700">
+        <button onClick={submit} className="flex flex-1 sm:flex-none items-center justify-center h-11 px-6 text-white transition-colors bg-blue-600 rounded-lg hover:bg-blue-700">
           ถัดไป
           <CheckCircle className="w-4 h-4 ml-2" />
         </button>
