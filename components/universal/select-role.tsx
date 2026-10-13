@@ -1,119 +1,90 @@
 "use client";
-import React, { useEffect, useState } from "react";
+
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { apiFetch } from "@/lib/client/api";
 
-type RoleOption = { id: string; name: string; key?: string };
-type Profile = { email?: string; prename?: string; name?: string; surname?: string };
+type RoleOption = { id: string; name: string };
+type Profile = { email?: string; fullName?: string };
 
-const ROLE_ROUTES: Record<string, string> = {
-  "1": "/user-management",     // admin
-  "2": "/leave-page",          // user
-  "3": "/reviewed-page",           // supervisor
-  "4": "/leave-approve",   // director
-  "5": "/leavetable",  // academic
+const ROLE_TH: Record<string, string> = {
+  admin: "ผู้ดูแลระบบ",
+  user: "บุคลากรทั่วไป (ยื่นใบลา)",
+  supervisor: "ฝ่ายธุรการ (ตรวจสอบใบลา)",
+  director: "ผู้อำนวยการ (อนุมัติใบลา)",
+  academic: "ฝ่ายวิชาการ (จัดสอนแทน)",
 };
 
-export default function SelectRole({
-  roleOptions,
-  profile,
-}: {
-  roleOptions: RoleOption[];
-  profile?: Profile;
-}) {
+export default function SelectRole({ roleOptions, profile }: { roleOptions: RoleOption[]; profile?: Profile }) {
   const router = useRouter();
-  const [selectedRole, setSelectedRole] = useState("");
+  const [selected, setSelected] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
+  const [error, setError] = useState("");
 
-  // ถ้ามี role เดียว auto-select ให้ง่ายขึ้น
+  // มีบทบาทเดียว → เลือกให้อัตโนมัติ
   useEffect(() => {
-    if (!selectedRole && roleOptions.length === 1) {
-      setSelectedRole(roleOptions[0].id);
-    }
-  }, [roleOptions, selectedRole]);
+    if (!selected && roleOptions.length === 1) setSelected(roleOptions[0].id);
+  }, [roleOptions, selected]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setErrorMsg("");
-
-    if (!selectedRole) {
-      setErrorMsg("โปรดเลือกสิทธิ์ก่อน");
-      return;
-    }
-
+    if (!selected) return setError("โปรดเลือกสิทธิ์ก่อน");
+    setError("");
+    setSubmitting(true);
     try {
-      setSubmitting(true);
-
-      const res = await fetch("/api/auth/set-role", {
-        method: "POST",
-        credentials: "include", // ส่ง/รับคุกกี้ให้ครบ
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roleId: Number(selectedRole) }),
-      });
-
-      if (!res.ok) {
-        const msg = await res.json().catch(() => ({}));
-        throw new Error(msg?.error || `Set role failed (${res.status})`);
-      }
-
-      router.push(ROLE_ROUTES[selectedRole] ?? "/");
-    } catch (err: any) {
-      setErrorMsg(err?.message || "เกิดข้อผิดพลาด");
-    } finally {
+      const res = await apiFetch<{ home: string }>("/api/auth/set-role", { method: "POST", json: { roleId: Number(selected) } });
+      router.push(res.home || "/");
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "เกิดข้อผิดพลาด");
       setSubmitting(false);
     }
-  };
+  }
 
   return (
-    <div className="bg-white shadow rounded-lg p-4 sm:p-7 max-w-7xl mx-auto mt-8 space-y-8">
-      {/* Profile */}
-      <section className="border rounded bg-blue-200">
+    <div className="max-w-3xl p-4 mx-auto mt-8 space-y-8 bg-white rounded-lg shadow sm:p-7">
+      <section className="bg-blue-200 border rounded">
         <div className="px-4 py-2 font-semibold">Profile</div>
-        <div className="bg-white px-4 py-3 space-y-2">
-          <p>
-            <span className="font-medium">ชื่อ - นามสกุล :</span>{" "}
-            {`${profile?.prename ?? ""}${profile?.name ?? ""} ${profile?.surname ?? ""}`.trim() || "-"}
-          </p>
-          <p>
-            <span className="font-medium">Email :</span> {profile?.email ?? "-"}
-          </p>
+        <div className="px-4 py-3 space-y-2 bg-white">
+          <p><span className="font-medium">ชื่อ - นามสกุล :</span> {profile?.fullName || "-"}</p>
+          <p><span className="font-medium">Email :</span> {profile?.email || "-"}</p>
         </div>
       </section>
 
-      {/* Roles */}
-      <section className="border rounded bg-blue-200">
+      <section className="bg-blue-200 border rounded">
         <div className="px-4 py-2 font-semibold">สิทธิ์เข้าใช้งานระบบ</div>
-        <div className="bg-white px-4 py-4 space-y-4 text-sm sm:text-base">
-          <form onSubmit={handleSubmit}>
-            <p className="font-medium mb-1">เลือกสิทธิ์เข้าใช้งาน</p>
-            <select
-              className="w-full sm:w-1/2 bg-gray-100 border px-3 py-2 rounded"
-              value={selectedRole}
-              onChange={(e) => setSelectedRole(e.target.value)}
-              required
-              disabled={submitting || roleOptions.length === 0}
-            >
-              <option value="">-- กรุณาเลือกสิทธิ์ --</option>
-              {roleOptions.map((role) => (
-                <option key={role.key ?? role.id} value={role.id}>
-                  {role.name}
-                </option>
-              ))}
-            </select>
-
-            {errorMsg && <p className="text-red-600 mt-2">{errorMsg}</p>}
-
-            <div className="pt-4 text-center">
-              <button
-                type="submit"
-                className="bg-green-300 hover:bg-green-400 px-6 py-2 rounded text-black font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed"
-                disabled={submitting || !selectedRole}
-                aria-busy={submitting ? "true" : "false"}
+        <div className="px-4 py-4 space-y-4 text-sm bg-white sm:text-base">
+          {roleOptions.length === 0 ? (
+            <p className="text-red-600">บัญชีนี้ยังไม่ได้รับสิทธิ์ใด ๆ กรุณาติดต่อผู้ดูแลระบบ</p>
+          ) : (
+            <form onSubmit={submit}>
+              <label htmlFor="role" className="block mb-1 font-medium">เลือกสิทธิ์เข้าใช้งาน</label>
+              <select
+                id="role"
+                className="w-full px-3 py-2 bg-gray-100 border rounded sm:w-1/2"
+                value={selected}
+                onChange={(e) => setSelected(e.target.value)}
+                disabled={submitting}
               >
-                {submitting ? "กำลังตั้งค่า..." : "ดำเนินการต่อ"}
-              </button>
-            </div>
-          </form>
+                <option value="">-- กรุณาเลือกสิทธิ์ --</option>
+                {roleOptions.map((r) => (
+                  <option key={r.id} value={r.id}>{ROLE_TH[r.name] ?? r.name}</option>
+                ))}
+              </select>
+
+              {error && <p className="mt-2 text-red-600">{error}</p>}
+
+              <div className="pt-4 text-center">
+                <button
+                  type="submit"
+                  disabled={submitting || !selected}
+                  className="px-6 py-2 font-semibold text-black transition bg-green-300 rounded hover:bg-green-400 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {submitting ? "กำลังตั้งค่า..." : "ดำเนินการต่อ"}
+                </button>
+              </div>
+            </form>
+          )}
         </div>
       </section>
     </div>

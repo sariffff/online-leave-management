@@ -28,8 +28,9 @@ type ApiItem = {
   date_start_type: string;
   date_end_type: string;
   totalDays: number;
-  status: LeaveStatus;
-  statusLabel: LeaveStatus;
+  status: string;
+  status_code: string;
+  outcome: LeaveStatus;
   submittedAt: string | null;
   reason: string | null;
   comment: string | null;
@@ -167,7 +168,7 @@ export default function LeaveDashboard() {
     try {
       setLoading(true);
       const res = await fetch(buildUrl(), { cache: "no-store" });
-      const json: ApiResponse | any = await res.json();
+      const json: ApiResponse & { error?: string } = await res.json();
       if (!res.ok || json?.error) throw new Error(json?.error || "FETCH_FAILED");
 
       const list = Array.isArray(json?.data) ? json.data : [];
@@ -355,7 +356,6 @@ export default function LeaveDashboard() {
             <EmployeeLeaveDetail
               employeeId={selectedEmployeeId}
               onBack={() => { setView("dashboard"); setSelectedEmployeeId(null); }}
-              onToggleSidebar={() => {}}
             />
           ) : (
             <div className="container mx-auto space-y-6">
@@ -468,7 +468,7 @@ export default function LeaveDashboard() {
                           {pieData.map((e,i)=>(<Cell key={i} fill={e.color} />))}
                         </Pie>
                         <Tooltip
-                          formatter={(v:any,_n:any,i:any)=>[`${v} ใบ (${i?.payload?.pct ?? 0}%)`, i?.payload?.name]}
+                          formatter={(v, _n, i) => [`${v} ใบ (${(i?.payload as { pct?: number } | undefined)?.pct ?? 0}%)`, (i?.payload as { name?: string } | undefined)?.name ?? ""]}
                           contentStyle={{ backgroundColor: "white", border: "1px solid #e2e8f0", borderRadius: "8px", fontSize: "14px" }}
                         />
                       </PieChart>
