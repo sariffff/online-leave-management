@@ -66,7 +66,7 @@ async function mkUser(label, roles, teacherGroup) {
   const { data, error } = await admin.auth.admin.createUser({ email, password: PW, email_confirm: true });
   if (error) throw error;
   const id = data.user.id;
-  const names = { teacher: "สมศรี", teacher2: "สมชาย", supervisor: "ธุรการ", director: "ผู้อำนวยการ", academic: "วิชาการ" };
+  const names = { teacher: "สมศรี", teacher2: "สมชาย", supervisor: "ธุรการ", director: "ผู้อำนวยการ", academic: "วิชาการ", admin: "ผู้ดูแล" };
   await admin.from("users").insert({ user_id: id, prename: "ครู", name: `${PREFIX}${names[label] ?? label}`, surname: "ทดสอบ", is_active: true });
   await admin.from("userrole").insert(roles.map((r) => ({ user_id: id, role_type_id: ROLE_ID[r] })));
   let teacherId = null;
@@ -80,9 +80,34 @@ async function seed() {
   U.supervisor = await mkUser("supervisor", ["supervisor"]);
   U.director = await mkUser("director", ["director"]);
   U.academic = await mkUser("academic", ["academic"]);
+  U.admin = await mkUser("admin", ["admin"]);
   // ครูสมศรีสอนวันจันทร์ คาบ 1
   await admin.from("teachingschedule").insert({ teacher_id: U.teacher.teacherId, day_of_week: "1", period_number: 1, start_time: "08:00:00", end_time: "08:50:00" });
 }
+/* การตั้งค่าระบบ: เดโมแก้ค่าจริง → สำรองไว้ก่อน แล้วคืนตอนจบ (เลขรุ่นใหม่กว่า เซิร์ฟเวอร์จึงรับ) */
+const SETTINGS_FILES = ["settings.json", "settings-history.json"];
+let settingsSnap = null;
+async function snapshotSettings() {
+  const snap = {};
+  for (const f of SETTINGS_FILES) {
+    const { data } = await admin.storage.from("app-config").download(f);
+    snap[f] = data ? await data.text() : null;
+  }
+  return snap;
+}
+async function restoreSettings(snap) {
+  const rev = Date.now() + 1000;
+  for (const f of SETTINGS_FILES) {
+    let value;
+    if (snap[f] === null) value = f === "settings.json" ? { _rev: rev } : { _rev: rev, items: [] };
+    else {
+      const parsed = JSON.parse(snap[f]);
+      value = Array.isArray(parsed) ? { _rev: rev, items: parsed } : { ...parsed, _rev: rev };
+    }
+    await admin.storage.from("app-config").upload(f, new Blob([JSON.stringify(value)], { type: "application/json" }), { upsert: true, contentType: "application/json", cacheControl: "0" });
+  }
+}
+
 async function cleanup() {
   const { data } = await admin.auth.admin.listUsers({ perPage: 1000 });
   const ids = data.users.filter((u) => /^e2e-demo-/.test(u.email ?? "")).map((u) => u.id);
@@ -155,7 +180,7 @@ async function newSession(browser, name, opts = {}) {
 function writeReport(meta) {
   const passed = steps.filter((s) => s.ok).length;
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-  const roleTh = { user: "บุคลากร", supervisor: "ธุรการ", director: "ผอ.", academic: "วิชาการ", mobile: "มือถือ" };
+  const roleTh = { user: "บุคลากร", supervisor: "ธุรการ", director: "ผอ.", academic: "วิชาการ", mobile: "มือถือ", admin: "ผู้ดูแล" };
   const videos = fs.readdirSync(OUT).filter((f) => f.endsWith(".webm"));
   const html = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ผลทดสอบอัตโนมัติ — ระบบลาออนไลน์</title>
@@ -174,7 +199,7 @@ main{max-width:1100px;margin:auto;padding:16px}
 video{width:100%;border-radius:12px;background:#000}
 .videos{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
 </style></head><body>
-<header><h1 style="margin:0;font-size:22px">ผลทดสอบอัตโนมัติ — ขั้นตอนการลาครบวงจร</h1>
+<header><h1 style="margin:0;font-size:22px">ผลทดสอบอัตโนมัติ — ขั้นตอนการลาครบวงจร + ตั้งค่าระบบ</h1>
 <div>${esc(meta.startedAt)} · ${esc(BASE)}</div></header>
 <main>
 <div class="sum"><div>ผลรวม: <b class="${passed === steps.length && meta.completed ? "ok" : "bad"}">${passed}/${steps.length} ขั้นผ่าน</b></div>
@@ -197,7 +222,8 @@ const meta = { startedAt: new Date().toLocaleString("th-TH"), completed: false, 
 const browser = await chromium.launch({ headless: HEADLESS, slowMo: HEADLESS ? 0 : SLOWMO });
 
 try {
-  log("เตรียมบัญชีทดสอบ 5 บัญชี (บุคลากร 2, ธุรการ, ผอ., วิชาการ) + ตารางสอน");
+  log("เตรียมบัญชีทดสอบ 6 บัญชี (บุคลากร 2, ธุรการ, ผอ., วิชาการ, ผู้ดูแล) + ตารางสอน + สำรองการตั้งค่าระบบ");
+  settingsSnap = await snapshotSettings();
   await seed();
 
   /* ---------- 1) บุคลากรยื่นใบลา ---------- */
@@ -307,6 +333,19 @@ try {
       await assign.getByRole("button", { name: "มอบหมาย", exact: true }).click();
       await expectVisible(page.getByText("มอบหมายครูสอนแทนแล้ว"), "แจ้งเตือนมอบหมายสำเร็จ");
     });
+    await step(page, "academic", "มอบหมายผิดคน? กด \"เปลี่ยน\" → หน้าต่างยืนยัน → เลือกครูใหม่", async () => {
+      await page.getByRole("dialog").getByRole("button", { name: "เปลี่ยน", exact: true }).filter({ visible: true }).first().click();
+      const ask = page.getByRole("dialog").filter({ hasText: "เปลี่ยนครูสอนแทน?" });
+      await expectVisible(ask, "หน้าต่างยืนยันการเปลี่ยน");
+      await ask.getByRole("button", { name: "ยกเลิกแล้วเลือกใหม่" }).click();
+      await expectVisible(page.getByText("ยกเลิกการมอบหมายแล้ว"), "แจ้งเตือนยกเลิกสำเร็จ");
+      const assign = page.getByRole("dialog").filter({ hasText: "มอบหมาย" }).last();
+      await assign.getByRole("combobox").click();
+      await page.getByRole("option", { name: new RegExp(`${PREFIX}สมชาย`) }).click();
+      await assign.getByRole("button", { name: "มอบหมาย", exact: true }).click();
+      await expectVisible(page.getByRole("dialog").getByText(`${PREFIX}สมชาย`), "ชื่อครูสอนแทนในตาราง");
+      return "ยกเลิกแล้วมอบหมายใหม่ได้ (ตารางไม่กระพริบระหว่างโหลด)";
+    });
     await step(page, "academic", "ครบทุกคาบ → กด \"✓ เสร็จสิ้น\"", async () => {
       await page.getByRole("button", { name: "✓ เสร็จสิ้น" }).click();
       await expectVisible(page.getByText("ปิดงานสอนแทนเรียบร้อย"), "แจ้งเตือนปิดงาน");
@@ -339,6 +378,77 @@ try {
     });
     await s.close();
   }
+
+  /* ---------- 6) ผู้ดูแลระบบ: ตั้งค่าระบบ + ตารางสอน ---------- */
+  {
+    const s = await newSession(browser, "6-ผู้ดูแล-ตั้งค่าระบบ");
+    const page = s.page;
+    const DEMO_NAME = `ระบบลา DEMO ${RUN}`;
+    await login(page, "admin", U.admin);
+    await step(page, "admin", "เมนู \"ตั้งค่าระบบ\" → หมวดทั่วไป: เปลี่ยนชื่อระบบ → บันทึก → หัวเว็บเปลี่ยนทันที", async () => {
+      await page.goto(`${BASE}/settings`);
+      await page.locator("#g-systemName").fill(DEMO_NAME);
+      await page.getByRole("button", { name: "บันทึก", exact: true }).click();
+      await expectVisible(page.getByText("บันทึกการตั้งค่าแล้ว"), "แจ้งเตือนบันทึกสำเร็จ");
+      await expectVisible(page.locator("header").getByText(DEMO_NAME), "ชื่อใหม่บนหัวเว็บ");
+    });
+    await step(page, "admin", "หมวดประวัติ: กด \"ย้อนกลับ\" → ชื่อกลับเป็นค่าเดิม", async () => {
+      await page.getByRole("button", { name: "ประวัติการแก้ไข" }).click();
+      const first = page.locator("li", { hasText: DEMO_NAME }).first();
+      await first.getByRole("button", { name: "ย้อนกลับ" }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "ย้อนกลับ" }).click();
+      await expectVisible(page.getByText("ย้อนกลับค่าเดิมแล้ว"), "แจ้งเตือนย้อนกลับ");
+      await page.waitForLoadState("networkidle");
+      await page.waitForTimeout(1000);
+      if (await page.locator("header").getByText(DEMO_NAME).isVisible()) throw new Error("หัวเว็บยังเป็นชื่อทดสอบ");
+    });
+    await step(page, "admin", "รายการย้อนกลับไม่มีปุ่มย้อนซ้ำ (กันกดวนไปมา) และรายการเดิมขึ้น \"ย้อนกลับแล้ว\"", async () => {
+      await expectVisible(page.getByText("รายการย้อนกลับ", { exact: true }), "ป้ายรายการย้อนกลับ");
+      await expectVisible(page.getByText("ย้อนกลับแล้ว", { exact: true }), "ป้ายย้อนกลับแล้ว");
+    });
+    await step(page, "admin", "หมวดประเภทการลา: เห็นทุกประเภทพร้อมกฎ", async () => {
+      await page.getByRole("button", { name: "ประเภทการลา" }).click();
+      await expectVisible(page.getByText("ลาป่วย").first(), "ประเภทลาป่วย");
+    });
+    await step(page, "admin", "หมวดคาบเรียน: เวลาแต่ละคาบ + ป้ายช่วงเช้า/บ่าย", async () => {
+      await page.getByRole("button", { name: "คาบเรียน" }).click();
+      await expectVisible(page.getByText("ช่วงบ่าย").first(), "ป้ายช่วงบ่าย");
+    });
+    await step(page, "admin", "หมวดไฟล์แนบ: ขนาด/จำนวน/ชนิดไฟล์ + ข้อความที่ผู้ยื่นจะเห็น", async () => {
+      await page.getByRole("button", { name: "ไฟล์แนบ" }).click();
+      await expectVisible(page.getByText("ผู้ยื่นลาจะเห็น:"), "ตัวอย่างข้อความ");
+    });
+    await step(page, "admin", "ปุ่ม \"คืนค่าเริ่มต้นทั้งระบบ\" → เลือกหมวดได้ → กดยกเลิก (ไม่แก้ค่าจริง)", async () => {
+      await page.getByRole("button", { name: "คืนค่าเริ่มต้นทั้งระบบ" }).click();
+      const dlg = page.getByRole("dialog");
+      await expectVisible(dlg.getByText("กฎประเภทการลา"), "รายการหมวด");
+      await page.waitForTimeout(800);
+      await dlg.getByRole("button", { name: "ยกเลิก", exact: true }).click();
+    });
+    await step(page, "admin", "จัดการตารางสอน: ค้นหาครูสมศรี → \"ดูตาราง\" (แสดงในหน้า ไม่ซ้อนหน้าต่าง)", async () => {
+      await page.goto(`${BASE}/schedule-management`);
+      await page.getByPlaceholder("ค้นหาชื่ออาจารย์…").fill(`${PREFIX}สมศรี`);
+      await page.getByRole("button", { name: "ดูตาราง" }).filter({ visible: true }).first().click();
+      await expectVisible(page.getByRole("heading", { name: new RegExp(`ตารางสอน: .*${PREFIX}สมศรี`) }), "หัวข้อตารางสอน");
+    });
+    await step(page, "admin", "กดช่อง \"ว่าง\" วันอังคาร คาบ 2 → ฟอร์มตั้งวัน/คาบให้ → บันทึก", async () => {
+      await page.getByRole("button", { name: "เพิ่มคาบ 2 วันอังคาร" }).click();
+      const dlg = page.getByRole("dialog");
+      await expectVisible(dlg.getByText("เพิ่มคาบ"), "ฟอร์มเพิ่มคาบ");
+      await dlg.getByRole("button", { name: "บันทึก" }).click();
+      await expectVisible(page.getByText("บันทึกเรียบร้อย"), "แจ้งเตือนบันทึก");
+    });
+    await step(page, "admin", "กด \"ลบ\" คาบที่เพิ่ม → หน้าต่างยืนยันแบบใหม่ → ลบ", async () => {
+      await page.getByRole("button", { name: "ลบ", exact: true }).filter({ visible: true }).last().click();
+      const ask = page.getByRole("dialog").filter({ hasText: "ลบคาบ 2 ใช่ไหม?" });
+      await expectVisible(ask, "หน้าต่างยืนยันลบ");
+      await page.waitForTimeout(800);
+      await ask.getByRole("button", { name: "ลบ", exact: true }).click();
+      await expectVisible(page.getByRole("button", { name: "เพิ่มคาบ 2 วันอังคาร" }), "ช่องกลับเป็นว่าง");
+    });
+    await logout(page, "admin");
+    await s.close();
+  }
   meta.completed = true;
 } catch (e) {
   meta.error = String(e?.message ?? e).split("\n")[0];
@@ -346,6 +456,7 @@ try {
   await browser.close();
   // ล้างข้อมูลทดสอบก่อนเสมอ แล้วค่อยเก็บกวาดไฟล์ (Windows อาจล็อกไฟล์วิดีโอไว้ชั่วครู่)
   meta.cleaned = await cleanup().catch(() => "ล้มเหลว");
+  if (settingsSnap) await restoreSettings(settingsSnap).catch((e) => console.error("คืนการตั้งค่าไม่สำเร็จ", e));
   try {
     fs.rmSync(path.join(OUT, "video-tmp"), { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
   } catch {

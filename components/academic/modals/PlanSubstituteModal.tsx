@@ -9,6 +9,7 @@ import AssignSubstituteModal, { type AssignContext } from "@/components/academic
 import type { LeaveItem } from "@/components/shared/types";
 import { apiFetch } from "@/lib/client/api";
 import { thaiDate } from "@/lib/format";
+import { useConfirm } from "@/components/shared/ConfirmDialog";
 
 type Slot = {
   teachingScheduleId: number;
@@ -18,6 +19,7 @@ type Slot = {
   room: string;
   substituteUserId: string | null;
   substituteName: string | null;
+  substituteId: number | null;
 };
 type Day = { date: string; weekday: number | null; holiday: string | null; slots: Slot[] };
 type Detail = {
@@ -51,6 +53,8 @@ export default function PlanSubstituteModal({
   const [error, setError] = useState<string | null>(null);
   const [picking, setPicking] = useState<AssignContext | null>(null);
   const [finishing, setFinishing] = useState(false);
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const confirm = useConfirm();
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -68,6 +72,9 @@ export default function PlanSubstituteModal({
     },
     [leaveId]
   );
+
+  // เปลี่ยนใบลา → ล้างตารางเดิม (โหลดซ้ำของใบเดิมคงข้อมูลไว้ระหว่างโหลด ไม่กระพริบ)
+  useEffect(() => setDetail(null), [leaveId]);
 
   useEffect(() => {
     if (!open) return;
@@ -90,6 +97,52 @@ export default function PlanSubstituteModal({
     }
   }
 
+  /** ยกเลิกการมอบหมาย แล้ว (ถ้าเลือก "เปลี่ยน") เปิดหน้าต่างเลือกครูใหม่ทันที */
+  async function cancelAssign(d: Day, s: Slot, thenPick: boolean) {
+    if (!s.substituteId) return;
+    const ok = await confirm({
+      title: thenPick ? "เปลี่ยนครูสอนแทน?" : "ยกเลิกการมอบหมาย?",
+      description: `คาบ ${s.period} วันที่ ${thaiDate(d.date)} — ${s.substituteName || "ครูสอนแทน"} จะไม่ต้องสอนคาบนี้แล้ว`,
+      confirmLabel: thenPick ? "ยกเลิกแล้วเลือกใหม่" : "ยกเลิกการมอบหมาย",
+      danger: true,
+    });
+    if (!ok) return;
+    setBusyId(s.substituteId);
+    try {
+      const r = await apiFetch<{ reopenedLeaveIds: number[] }>(`/api/academic/substitutions/${s.substituteId}`, { method: "DELETE" });
+      toast.success(r.reopenedLeaveIds.length ? "ยกเลิกแล้ว — ใบลากลับเป็น \"อนุมัติ\" (ยังจัดสอนแทนไม่ครบ) ต้องกดเสร็จสิ้นใหม่" : "ยกเลิกการมอบหมายแล้ว");
+      if (r.reopenedLeaveIds.length) onChanged?.();
+      await load();
+      if (thenPick) setPicking({ dateISO: d.date, period: s.period, teachingScheduleId: s.teachingScheduleId });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "ยกเลิกไม่สำเร็จ");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  /** ป้ายชื่อครูสอนแทน + ปุ่มเปลี่ยน/ยกเลิก */
+  const assigned = (d: Day, s: Slot, mobile = false) => (
+    <div className={`flex flex-wrap items-center gap-2 ${mobile ? "" : "max-w-xs"}`}>
+      <Badge variant="outline" className="text-green-700 border-green-300">
+        {mobile ? "ครูสอนแทน: " : ""}
+        {s.substituteName || "—"}
+      </Badge>
+      {s.substituteId && (
+        <span className="flex gap-1">
+          <Button size="sm" variant="outline" className="h-8 px-2" disabled={busyId !== null} onClick={() => cancelAssign(d, s, true)}>
+            เปลี่ยน
+          </Button>
+          <Button size="sm" variant="ghost" className="h-8 px-2 text-red-600 hover:bg-red-50" disabled={busyId !== null} onClick={() => cancelAssign(d, s, false)}>
+            {busyId === s.substituteId ? "กำลังยกเลิก..." : "ยกเลิก"}
+          </Button>
+        </span>
+      )}
+    </div>
+  );
+
+  // แสดง "กำลังโหลด" เฉพาะครั้งแรก — โหลดซ้ำหลังมอบหมาย/ยกเลิกคงตารางเดิมไว้
+  const firstLoad = loading && !detail;
   const leave = detail?.leave;
   const progress = detail?.progress;
 
@@ -112,10 +165,10 @@ export default function PlanSubstituteModal({
 
           {/* มือถือ: การ์ดรายวัน */}
           <div className="flex-1 space-y-3 overflow-y-auto md:hidden">
-            {loading && <p className="py-6 text-center text-muted-foreground">กำลังโหลดตาราง...</p>}
-            {!loading && error && <p className="py-6 text-center text-red-600">{error}</p>}
-            {!loading && detail && !detail.isTeacher && <p className="py-6 text-center text-muted-foreground">ผู้ลาไม่ได้เป็นครู จึงไม่มีตารางสอน</p>}
-            {!loading &&
+            {firstLoad && <p className="py-6 text-center text-muted-foreground">กำลังโหลดตาราง...</p>}
+            {!firstLoad && error && <p className="py-6 text-center text-red-600">{error}</p>}
+            {!firstLoad && detail && !detail.isTeacher && <p className="py-6 text-center text-muted-foreground">ผู้ลาไม่ได้เป็นครู จึงไม่มีตารางสอน</p>}
+            {!firstLoad &&
               detail?.isTeacher &&
               detail.schedule.map((d) => (
                 <div key={d.date} className="border rounded-lg">
@@ -134,7 +187,7 @@ export default function PlanSubstituteModal({
                           </div>
                           <div className="text-muted-foreground">{s.subject} · {s.room}</div>
                           {s.substituteUserId ? (
-                            <Badge variant="outline" className="text-green-700 border-green-300">ครูสอนแทน: {s.substituteName || "—"}</Badge>
+                            assigned(d, s, true)
                           ) : (
                             <Button size="sm" className="w-full h-10 text-white bg-blue-600 hover:bg-blue-700" onClick={() => setPicking({ dateISO: d.date, period: s.period, teachingScheduleId: s.teachingScheduleId })}>
                               เลือกครูสอนแทน
@@ -161,22 +214,22 @@ export default function PlanSubstituteModal({
                 </tr>
               </thead>
               <tbody>
-                {loading && (
+                {firstLoad && (
                   <tr>
                     <td colSpan={6} className="py-6 text-center text-muted-foreground">กำลังโหลดตาราง...</td>
                   </tr>
                 )}
-                {!loading && error && (
+                {!firstLoad && error && (
                   <tr>
                     <td colSpan={6} className="py-6 text-center text-red-600">{error}</td>
                   </tr>
                 )}
-                {!loading && detail && !detail.isTeacher && (
+                {!firstLoad && detail && !detail.isTeacher && (
                   <tr>
                     <td colSpan={6} className="py-6 text-center text-muted-foreground">ผู้ลาไม่ได้เป็นครู จึงไม่มีตารางสอน</td>
                   </tr>
                 )}
-                {!loading &&
+                {!firstLoad &&
                   detail?.isTeacher &&
                   detail.schedule.map((d, di) => (
                     <Fragment key={d.date}>
@@ -212,9 +265,7 @@ export default function PlanSubstituteModal({
                             <td className="px-3 py-2">{s.room}</td>
                             <td className="px-3 py-2">
                               {s.substituteUserId ? (
-                                <Badge variant="outline" className="border-green-300 text-green-700">
-                                  {s.substituteName || "—"}
-                                </Badge>
+                                assigned(d, s)
                               ) : (
                                 <Button
                                   size="sm"

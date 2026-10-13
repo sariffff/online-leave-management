@@ -46,6 +46,8 @@ export type ScheduleSlot = {
   room: string;
   substituteUserId: string | null;
   substituteName: string | null;
+  /** รหัสการมอบหมาย (ใช้ยกเลิก) */
+  substituteId: number | null;
 };
 
 /** weekday: จันทร์=1…ศุกร์=5 หรือ null (เสาร์-อาทิตย์) · holiday: ชื่อวันหยุด (ไม่ต้องจัดสอนแทน) */
@@ -90,22 +92,24 @@ export async function scheduleForRange(teacherId: number, leave: LeaveSpan): Pro
 
   // สอนแทนที่มีอยู่แล้วในช่วงนี้
   const tsIds = rows.map((r) => r.teaching_schedule_id);
-  const subs = new Map<string, { userId: string; name: string }>(); // `${date}|${tsId}`
+  const subs = new Map<string, { id: number; userId: string; name: string }>(); // `${date}|${tsId}`
   if (tsIds.length) {
     const subRes = await supabaseAdmin
       .from("substituteuserteaching")
-      .select("date_time, teaching_schedule_id, substitute_user_id, substitute:substitute_user_id ( prename, name, surname )")
+      .select("substitute_teaching_id, date_time, teaching_schedule_id, substitute_user_id, substitute:substitute_user_id ( prename, name, surname )")
       .in("teaching_schedule_id", tsIds)
       .gte("date_time", `${start}T00:00:00`)
       .lt("date_time", `${new Date(Date.parse(`${end}T00:00:00Z`) + DAY_MS).toISOString().slice(0, 10)}T00:00:00`);
     if (subRes.error) throw new HttpError(500, "DB_ERROR", subRes.error.message);
     for (const s of (subRes.data ?? []) as unknown as Array<{
+      substitute_teaching_id: number;
       date_time: string;
       teaching_schedule_id: number;
       substitute_user_id: string;
       substitute: { prename: string | null; name: string | null; surname: string | null } | null;
     }>) {
       subs.set(`${String(s.date_time).slice(0, 10)}|${s.teaching_schedule_id}`, {
+        id: s.substitute_teaching_id,
         userId: s.substitute_user_id,
         name: fullName(s.substitute),
       });
@@ -136,6 +140,7 @@ export async function scheduleForRange(teacherId: number, leave: LeaveSpan): Pro
         room: r.classroom?.classroom_name ?? "-",
         substituteUserId: sub?.userId ?? null,
         substituteName: sub?.name ?? null,
+        substituteId: sub?.id ?? null,
       };
     });
     return { date, weekday: dow, holiday, slots };
@@ -282,4 +287,36 @@ export async function assignSubstitute(args: { teachingScheduleId: number; dateI
     .single();
   if (ins.error) throw new HttpError(500, "DB_ERROR", ins.error.message);
   return ins.data;
+}
+
+/**
+ * ยกเลิกการมอบหมายสอนแทน 1 คาบ (มอบหมายผิดคน/ครูสอนแทนติดธุระ)
+ * ถ้าใบลาของครูเจ้าของคาบปิดงานไปแล้ว (covered) → กลับเป็น approved เพื่อให้มอบหมายใหม่และปิดงานอีกครั้ง
+ */
+export async function cancelSubstitute(substituteId: number): Promise<{ reopenedLeaveIds: number[] }> {
+  const { data: sub, error } = await supabaseAdmin
+    .from("substituteuserteaching")
+    .select("substitute_teaching_id, date_time, teaching_schedule:teaching_schedule_id ( teacher:teacher_id ( user_id ) )")
+    .eq("substitute_teaching_id", substituteId)
+    .maybeSingle();
+  if (error) throw new HttpError(500, "DB_ERROR", error.message);
+  if (!sub) throw new HttpError(404, "SUBSTITUTION_NOT_FOUND");
+
+  const date = String(sub.date_time).slice(0, 10);
+  const ownerId = (sub as unknown as { teaching_schedule: { teacher: { user_id: string | null } | null } | null }).teaching_schedule?.teacher?.user_id;
+
+  const del = await supabaseAdmin.from("substituteuserteaching").delete().eq("substitute_teaching_id", substituteId);
+  if (del.error) throw new HttpError(500, "DB_ERROR", del.error.message);
+
+  if (!ownerId) return { reopenedLeaveIds: [] };
+  const reopened = await supabaseAdmin
+    .from("leaverequest")
+    .update({ status: "approved" })
+    .eq("user_id", ownerId)
+    .eq("status", "covered")
+    .lte("date_start", date)
+    .gte("date_end", date)
+    .select("leave_request_id");
+  if (reopened.error) throw new HttpError(500, "DB_ERROR", reopened.error.message);
+  return { reopenedLeaveIds: (reopened.data ?? []).map((r) => r.leave_request_id as number) };
 }

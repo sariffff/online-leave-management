@@ -387,6 +387,7 @@ try {
     ["PATCH", "/api/academic/leaves/999999/complete", ["academic"]],
     ["GET", "/api/academic/substitution-history?from=2026-11-01&to=2026-11-30", ["academic"]],
     ["POST", "/api/academic/substitutions", ["academic"]],
+    ["DELETE", "/api/academic/substitutions/999999", ["academic"]],
     ["GET", "/api/admin/levelmanagement", "any"],
     ["POST", "/api/admin/levelmanagement", ["admin"]],
     ["PATCH", "/api/admin/levelmanagement/999999", ["admin"]],
@@ -1257,6 +1258,23 @@ try {
     expectStatus(await get(U.aca, "/api/academic/substitution-history?from=bad&to=2026-11-18"), 400);
     return a.json.items.map((i) => `${i.date} คาบ${i.period} ${i.substitute}`).join(" | ");
   });
+  await t("AC-16b", "ยกเลิกการมอบหมาย: บทบาทอื่น 403 → ยกเลิกได้ ใบ covered กลับเป็น approved → ยกเลิกซ้ำ 404 → มอบหมายใหม่ + ปิดงานได้อีก", async () => {
+    const slotOf = async () =>
+      (await get(U.aca, `/api/academic/leaves/${ids.L1}`)).json.schedule.find((d) => d.date === "2026-11-16").slots.find((s) => s.teachingScheduleId === ids.ts[0]);
+    const s = await slotOf();
+    expect(s?.substituteId, `ไม่มี substituteId: ${JSON.stringify(s)}`);
+    for (const u of [U.ta, U.sup, U.dir, U.admin]) expectStatus(await del(u, `/api/academic/substitutions/${s.substituteId}`), 403);
+    expectStatus(await del(U.aca, "/api/academic/substitutions/abc"), 400);
+    const r = await del(U.aca, `/api/academic/substitutions/${s.substituteId}`);
+    expect(r.status === 200 && r.json.reopenedLeaveIds.map(String).includes(String(ids.L1)), show(r));
+    expect((await slotOf()).substituteId === null, "คาบยังมีครูสอนแทน");
+    const st = (await admin.from("leaverequest").select("status").eq("leave_request_id", ids.L1).single()).data.status;
+    expect(st === "approved", `สถานะ ${st}`);
+    expectStatus(await del(U.aca, `/api/academic/substitutions/${s.substituteId}`), 404);
+    expectStatus(await post(U.aca, "/api/academic/substitutions", { teachingScheduleId: ids.ts[0], dateISO: "2026-11-16", substituteUserId: U.tb.id }), 201);
+    const c = await patch(U.aca, `/api/academic/leaves/${ids.L1}/complete`);
+    expect(c.status === 200 && c.json.status === "covered", show(c));
+  });
   await t("AC-17", "ลาครึ่งบ่าย: ไม่ควรต้องจัดสอนแทนคาบเช้า", async () => {
     // ผอ.สร้างลาครึ่งบ่ายให้ teacherA วันอังคาร 1 ธ.ค. (มีคาบ 1 ตอนเช้า) → ไม่ควรต้องจัดสอนแทนคาบเช้า
     const c = await post(U.dir, "/api/director/create-leave", { user_id: U.ta.id, leave_type_id: 1, date_start: "2026-12-01", date_end: "2026-12-01", date_start_type: "ครึ่งบ่าย" });
@@ -1757,8 +1775,13 @@ try {
       expect(b.status === 422 && b.json.error === "DOCUMENT_REQUIRED", errOf(b));
       const c = await submitT({ date_start: far, date_end: far, date_start_type: "ครึ่งเช้า" });
       expect(c.status === 422 && c.json.error === "HALF_DAY_NOT_ALLOWED", errOf(c));
-      const soon = weekday(isoAdd(todayTH, 1));
-      const d = await submitT({ date_start: soon, date_end: soon }, pdf());
+      // วันทำการถัดไป (ข้ามวันหยุด: ถ้าตกวันหยุดระบบตอบ NO_WORKING_DAYS ก่อนตรวจกฎ)
+      let soon = weekday(isoAdd(todayTH, 1));
+      let d = await submitT({ date_start: soon, date_end: soon }, pdf());
+      for (let i = 0; i < 5 && d.json?.error === "NO_WORKING_DAYS"; i++) {
+        soon = weekday(isoAdd(soon, 1));
+        d = await submitT({ date_start: soon, date_end: soon }, pdf());
+      }
       expect(d.status === 422 && d.json.error === "NOTICE_TOO_SHORT", `${soon}: ${errOf(d)}`);
     });
     await t("LTA-06", "ยื่นตามกฎครบ (2 วัน + แนบเอกสาร + ล่วงหน้า) → 201", async () => {
@@ -1780,8 +1803,12 @@ try {
     });
     await t("LTA-09", "ผอ.สร้างแทน: ไม่ติดกฎล่วงหน้า/เอกสาร แต่ยังห้ามครึ่งวัน", async () => {
       expectStatus(await patch(U.admin, `${LT}/${ids.ruleType}`, { minNoticeDays: 30, docRequiredAfterDays: 0 }), 200);
-      const soon = weekday(isoAdd(todayTH, 2));
-      const ok = await post(U.dir, "/api/director/create-leave", { user_id: U.tb.id, leave_type_id: ids.ruleType, date_start: soon, date_end: soon });
+      let soon = weekday(isoAdd(todayTH, 2));
+      let ok = await post(U.dir, "/api/director/create-leave", { user_id: U.tb.id, leave_type_id: ids.ruleType, date_start: soon, date_end: soon });
+      for (let i = 0; i < 5 && ok.json?.error === "NO_WORKING_DAYS"; i++) {
+        soon = weekday(isoAdd(soon, 1));
+        ok = await post(U.dir, "/api/director/create-leave", { user_id: U.tb.id, leave_type_id: ids.ruleType, date_start: soon, date_end: soon });
+      }
       expect(ok.status === 201, `${soon}: ${errOf(ok)}`);
       const half = await post(U.dir, "/api/director/create-leave", { user_id: U.tb.id, leave_type_id: ids.ruleType, date_start: "2027-02-01", date_end: "2027-02-01", date_start_type: "ครึ่งบ่าย" });
       expect(half.status === 422 && half.json.error === "HALF_DAY_NOT_ALLOWED", errOf(half));

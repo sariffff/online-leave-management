@@ -21,6 +21,7 @@ import { thaiDate } from "@/lib/format";
 import { useLeaveTypes } from "@/lib/client/useLeaveTypes";
 import { acceptOf, checkAttachment, defaultLeaveRule, kindsText } from "@/lib/settings-schema";
 import { usePublicSettings } from "@/components/shell/SettingsContext";
+import { useConfirm } from "@/components/shared/ConfirmDialog";
 
 const selectCls = "w-full h-10 px-3 bg-white border rounded-md text-sm";
 
@@ -39,11 +40,12 @@ export default function LeaveRequestModal({
   const editable = !!item && (OWNER_EDITABLE as readonly string[]).includes(item.status_code);
   const types = useLeaveTypes(true);
   const attach = usePublicSettings().attachments;
+  const confirm = useConfirm();
   const rule = types.find((t) => t.leave_type_id === item?.leaveTypeId)?.rule ?? defaultLeaveRule(item?.leaveTypeId ?? 0);
   const [tab, setTab] = useState<"detail" | "edit">("detail");
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [form, setForm] = useState({ reason: "", startDate: "", endDate: "", startType: "เต็มวัน" as HalfType, endType: "เต็มวัน" as HalfType });
 
   useEffect(() => {
@@ -55,7 +57,7 @@ export default function LeaveRequestModal({
       startType: normalizeHalf(item.date_start_type),
       endType: normalizeHalf(item.date_end_type),
     });
-    setFile(null);
+    setFiles([]);
     setTab("detail");
   }, [item, open]);
 
@@ -87,7 +89,8 @@ export default function LeaveRequestModal({
     if (!form.startDate || !form.endDate) return toast.error("กรุณาเลือกช่วงวันลาให้ครบ");
     if (!form.reason.trim()) return toast.error("กรุณากรอกเหตุผลการลา");
     if (total <= 0) return toast.error("ช่วงวันที่เลือกไม่มีวันทำการ");
-    const badFile = file && checkAttachment(attach, file);
+    if (files.length > attach.maxFiles) return toast.error(`แนบไฟล์ได้ไม่เกิน ${attach.maxFiles} ไฟล์`);
+    const badFile = files.map((f) => checkAttachment(attach, f)).find(Boolean);
     if (badFile) return toast.error(badFile.message);
 
     const fd = new FormData();
@@ -97,7 +100,7 @@ export default function LeaveRequestModal({
     fd.append("date_start_type", form.startType);
     fd.append("date_end_type", form.endType);
     fd.append("total_day", String(total));
-    if (file) fd.append("file", file);
+    for (const f of files) fd.append("file", f);
 
     setSaving(true);
     try {
@@ -113,7 +116,8 @@ export default function LeaveRequestModal({
   }
 
   async function remove() {
-    if (!item || !window.confirm("ยืนยันการลบใบลานี้? ไฟล์แนบ (ถ้ามี) จะถูกลบด้วย")) return;
+    if (!item) return;
+    if (!(await confirm({ title: "ลบใบลานี้?", description: "ไฟล์แนบ (ถ้ามี) จะถูกลบด้วย ย้อนกลับไม่ได้", confirmLabel: "ลบใบลา", danger: true }))) return;
     setRemoving(true);
     try {
       await apiFetch(`/api/user/leave-history/${item.id}`, { method: "DELETE" });
@@ -205,8 +209,15 @@ export default function LeaveRequestModal({
                   <div className="space-y-2">
                     <Label className="block mb-1">ไฟล์แนบเดิม</Label>
                     <FileList files={item.files} />
-                    <Label className="block pt-2 mb-1">แทนที่ไฟล์แนบ ({kindsText(attach)} ไม่เกิน {attach.maxFileMB}MB)</Label>
-                    <Input type="file" accept={acceptOf(attach)} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                    <Label className="block pt-2 mb-1">
+                      แทนที่ไฟล์แนบ ({kindsText(attach)} ไม่เกิน {attach.maxFileMB}MB, สูงสุด {attach.maxFiles} ไฟล์)
+                    </Label>
+                    <Input type="file" multiple accept={acceptOf(attach)} onChange={(e) => setFiles(Array.from(e.target.files ?? []))} />
+                    {files.length > 0 && (
+                      <p className="text-xs text-amber-700">
+                        เลือกแล้ว {files.length} ไฟล์ — เมื่อบันทึก ไฟล์แนบเดิมทั้งหมดจะถูกแทนที่ด้วยไฟล์ชุดนี้
+                      </p>
+                    )}
                   </div>
                 </CardContent>
               </Card>

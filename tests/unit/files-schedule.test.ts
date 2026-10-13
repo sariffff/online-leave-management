@@ -76,6 +76,7 @@ describe("schedule helpers", () => {
       room: "",
       substituteUserId: sub,
       substituteName: null,
+      substituteId: sub ? 1 : null,
     });
     const r = coverageOf([{ date: "2026-11-16", weekday: 1, holiday: null, slots: [slot(1, "x"), slot(2, null)] }]);
     expect(r).toMatchObject({ required: 2, assigned: 1, complete: false, missing: [{ date: "2026-11-16", tsId: 2, period: 2 }] });

@@ -11,12 +11,12 @@
 - ทดสอบหลังล็อกอินจริงแล้ว (E2E ทุกบทบาท) — ผล `tests/TEST_REPORT.md`: unit 77/77, E2E ล่าสุด PASS 231 / WARN 4 / FAIL 5 (ข้อมูลเก่า 5) — 2026-10-13 หลังรัน migration
 
 ## งานถัดไป
-- **หน้าตั้งค่าระบบ `SETTINGS_PLAN.md` ครบทั้ง 4 ช่วงแล้ว** + แก้ตาม `bug-report-form-me.md` — commit แล้ว (9369104, 372e096, 30a0c4f) **ยังไม่ push** (เครื่องมือของ Claude ถูกบล็อกการ push → ผู้ใช้ต้อง `git push origin refactor/system-overhaul` เอง)
+- **หน้าตั้งค่าระบบ `SETTINGS_PLAN.md` ครบทั้ง 4 ช่วงแล้ว** + แก้ตาม `bug-report-form-me.md` — commit แล้ว (9369104, 372e096, 30a0c4f) push แล้ว (2026-10-13)
   - รอผู้ใช้ตอบ: ย้ายการตั้งค่าจากไฟล์ใน Storage ไปตารางในฐานข้อมูล (migration 007) หลังรัน 001–006 หรือไม่ — Claude แนะนำให้ย้าย
-- **งานหลักตอนนี้: UI ตาม `UI_FIX_PLAN.md`** — เฟส 1–2 เสร็จ (audit 72/72 ผ่าน), เฟส 3–5 ส่วนใหญ่เสร็จ; ที่เหลือดูหัวข้อ "ยังเหลือ" ท้ายไฟล์นั้น (C9/Q4, C15 API ยกเลิกการมอบหมาย, C18, B6, B10, Q1, Q2) — ยังไม่ได้ commit งาน UI
+- **UI ตาม `UI_FIX_PLAN.md`** — ทำครบแล้วยกเว้นข้อที่รอผู้ใช้ตอบ: C9/Q4 (บังคับเหตุผลเมื่อไม่ผ่าน/ไม่อนุมัติ), A10/Q2 (ตัวเลือกวันที่ไทย), C17/Q1 (หน้าภาคเรียน/ชั้นปีเป็นข้อมูลปลอม)
   - โครงหน้าใหม่: `components/shell/` (NavContext, RoleShell, Page) — หน้าไม่ต้องวาด sidebar เอง ใช้ `PageContainer`/`PageHeader`; ตารางใช้การ์ดบนจอเล็ก (LeaveTable/บุคลากร < xl, CRUD < md)
   - ตรวจด้วย `npm run test:ui` (Playwright, ต้องเปิด `npx next start -p 3100`, ใช้เวลา ~15 นาที)
-  - เดโมให้ผู้ใช้ดู: `npm run test:demo` (Playwright เปิดหน้าต่างจริง คลิกครบวงจร ยื่นลา→ธุรการ→ผอ.→วิชาการ→มือถือ 25 ขั้น, วิดีโอ+รายงาน `tests/ui/demo-output/report.html`) — ผ่าน 25/25 (2026-10-13); `DEMO_HEADLESS=1` ไม่เปิดหน้าต่าง, `--cleanup` ล้างข้อมูลค้าง
+  - เดโมให้ผู้ใช้ดู: `npm run test:demo` (Playwright เปิดหน้าต่างจริง คลิกครบวงจร ยื่นลา→ธุรการ→ผอ.→วิชาการ→มือถือ 25 ขั้น, วิดีโอ+รายงาน `tests/ui/demo-output/report.html`) — ผ่าน 38/38 (2026-10-14: เพิ่มขั้นวิชาการ "เปลี่ยนครูสอนแทน" + ผู้ดูแล 9 ขั้น: ตั้งค่าระบบ/ย้อนกลับ/ตารางสอนแบบใหม่ — สำรอง/คืนการตั้งค่าจริงให้เอง); `DEMO_HEADLESS=1` ไม่เปิดหน้าต่าง, `--cleanup` ล้างข้อมูลค้าง
 0. **รอผู้ใช้** (โค้ดแก้ครบแล้ว 2026-10-13):
    - ตัดสินใจเรื่องข้อมูลจริงที่ผิด (ยังไม่แตะ): ใบ #80/#81 total_day เกิน (นับวันหยุด 15 ต.ค.) + ทับกัน, ใบทับกัน 49 คู่, #46/#47/#77 ไม่มีผู้อนุมัติ, สอนแทน #1 แถวขยะ, บัญชีปิดใช้งาน 1 คนยังไม่ ban ที่ Auth
    - นโยบาย: ให้ตรวจ/อนุมัติใบลาของตัวเองได้หรือไม่ (MR-01/02)
@@ -26,12 +26,18 @@
    - `auth.*` สูง = เชื่อม Supabase ช้า / `db.*` สูง = ควรรัน migration 004 (index) / `google.calendar` = API วันหยุด / `storage.signUrls` = ลิงก์ไฟล์แนบ
 2. ~~migration~~ **รันครบแล้ว 2026-10-13** (001, 002, 005, 004, 006, 003 — RLS เปิดแล้ว, SEC ผ่านทั้ง 7) — ถ้ามีเว็บจริงที่ deploy จาก `main` (โค้ดเก่า) ต้อง deploy โค้ดใหม่ เพราะโค้ดเก่าอ่าน DB ด้วย session ผู้ใช้
 3. ไม่ใช้ Google service account แล้ว — ผู้ใช้ควรลบคีย์เดิมใน Google Cloud (เคยถูก commit ใน `first commit`) และลบไฟล์ `.service-account-key.json`
-4. deploy: ยังไม่รู้ว่าเว็บจริง deploy ที่ไหน (ไม่มี vercel config ใน repo); `origin/main` (1af987c) มี commit ที่ local main (bc7ca90) ไม่มี — ต้องดูก่อน merge
+4. ยังไม่มีเว็บจริง (ผู้ใช้ยืนยัน 2026-10-13) — ไม่ต้อง deploy; ก่อน merge เข้า main ต้องดู `origin/main` (1af987c) ที่มี commit ที่ local main ไม่มี
 5. (ทางเลือก) หน้า `semester-management`, `year-management` ยังเป็นข้อมูลจำลอง ไม่มีตารางใน DB รองรับ
 
 ## ประวัติงาน
 
+### 2026-10-14
+- เดโม Playwright แบบเปิดหน้าต่างให้ผู้ใช้ดู 38/38, unit 110/110, E2E PASS 232 / FAIL 5 (ข้อมูลเก่า), UI audit 87/87
+- แก้เทส LTA-05/09 ให้ข้ามวันหยุด (15 ต.ค. เป็นวันหยุดโรงเรียน → NO_WORKING_DAYS)
+- ข้อควรระวัง: อย่าหยุดสคริปต์ audit/demo กลางทาง — ข้อมูลทดสอบจะค้างจนกว่าจะรันรอบถัดไป (ทำให้ DI-10/DI-13 ไม่ผ่านชั่วคราว)
+
 ### 2026-10-13 (ต่อ)
+- UI ที่เหลือ: C15 ยกเลิก/เปลี่ยนครูสอนแทน (`cancelSubstitute`, `DELETE /api/academic/substitutions/[id]`), B6 `ConfirmProvider`/`useConfirm` ใน root layout, C18 ตารางสอนในหน้าแทน dialog, C7 แก้ไขแนบหลายไฟล์, B10 usePagedQuery ยิงครั้งเดียว, แก้กระพริบ PlanSubstituteModal — E2E PASS 232 / FAIL 5 (ข้อมูลเก่า)
 - UI audit ทั้งระบบหลังเปิด RLS: 87/87 ไม่มีปัญหา
 - ผู้ใช้รัน migration ครบ (Claude ตรวจข้อมูลก่อน: ไม่มีข้อมูลซ้ำ/กำพร้า; แก้ 004 ให้รันซ้ำได้) → E2E PASS 231 / FAIL 5 (เหลือ DI ข้อมูลเก่าเท่านั้น); แก้ SET-08 ให้รองรับระบบที่มีโลโก้จริง
 - ตั้งค่าระบบช่วง 3–4: `PeriodsTab.tsx`, `AttachmentsTab.tsx`; `checkAttachment/acceptOf/describeAttachments/fileKindOf` ใน `settings-schema.ts`; `assertUploads` ตรวจไฟล์ก่อน insert ใบลา; ย้อนกลับหมวดไฟล์แนบปรับ bucket ด้วย; E2E PASS 226 / FAIL 10 (เดิม), settings 30/30, UI audit settings 15/15

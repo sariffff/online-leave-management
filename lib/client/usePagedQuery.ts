@@ -13,11 +13,15 @@ export type InitialPage<T> = { data: T[]; total: number; totalPages: number };
 /**
  * โหลดรายการแบบแบ่งหน้าจาก API (กรอง/แบ่งหน้าที่ฝั่ง DB)
  *  - มี `initial` → แสดงทันทีโดยไม่ยิง API ครั้งแรก ยิงเฉพาะเมื่อผู้ใช้กรอง/เปลี่ยนหน้า/รีโหลด
- *  - เปลี่ยน params → กลับไปหน้า 1 อัตโนมัติ
+ *  - เปลี่ยน params → กลับไปหน้า 1 อัตโนมัติ (คำนวณในรอบ render เดียวกัน จึงยิง API ครั้งเดียว ไม่ยิงหน้าเดิมก่อน)
  *  - ยกเลิก request เก่าที่ยังไม่เสร็จ ป้องกันผลเก่าทับผลใหม่
  */
 export function usePagedQuery<T>(endpoint: string, params: Params, pageSize = 10, enabled = true, initial?: InitialPage<T>) {
-  const [page, setPage] = useState(1);
+  const paramsKey = JSON.stringify(params);
+  // หน้าที่เลือกผูกกับ params ชุดที่เลือก — params เปลี่ยนเมื่อไร หน้าเป็น 1 ทันที
+  const [pageState, setPageState] = useState({ key: paramsKey, page: 1 });
+  const page = pageState.key === paramsKey ? pageState.page : 1;
+  const setPage = useCallback((p: number) => setPageState({ key: paramsKey, page: p }), [paramsKey]);
   const [rows, setRows] = useState<T[]>(initial?.data ?? []);
   const [total, setTotal] = useState(initial?.total ?? 0);
   const [totalPages, setTotalPages] = useState(initial?.totalPages ?? 1);
@@ -26,18 +30,8 @@ export function usePagedQuery<T>(endpoint: string, params: Params, pageSize = 10
   const [tick, setTick] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
 
-  const paramsKey = JSON.stringify(params);
-  const prevKey = useRef(paramsKey);
-
   // key ของข้อมูลที่แสดงอยู่ตอนนี้ — ถ้า key ใหม่เท่ากับของเดิม ไม่ต้องโหลดซ้ำ
   const loadedKey = useRef<string | null>(initial ? JSON.stringify([endpoint, paramsKey, 1, pageSize, 0]) : null);
-
-  useEffect(() => {
-    if (prevKey.current !== paramsKey) {
-      prevKey.current = paramsKey;
-      setPage(1);
-    }
-  }, [paramsKey]);
 
   useEffect(() => {
     if (!enabled) return;
