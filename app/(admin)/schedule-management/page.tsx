@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { apiFetch } from "@/lib/client/api";
+import { useConfirm } from "@/components/shared/ConfirmDialog";
 import { DAY_NAMES } from "@/lib/periods";
 import { usePublicSettings } from "@/components/shell/SettingsContext";
 
@@ -32,6 +33,7 @@ const selectCls = "h-9 w-full rounded-md border border-input bg-transparent px-3
 export default function ScheduleManagementPage() {
   // คาบเรียนจากการตั้งค่าระบบ
   const PERIODS = usePublicSettings().periods.periods;
+  const confirm = useConfirm();
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
@@ -96,10 +98,11 @@ export default function ScheduleManagementPage() {
   const subjectNames = useMemo(() => [...new Set(slots.map((s) => s.subject_name).filter(Boolean))], [slots]);
   const visibleSlots = filterSubject === "all" ? slots : slots.filter((s) => s.subject_name === filterSubject);
 
-  function openForm(slot: Slot | null) {
+  /** preset: กดช่องว่างในตาราง → ตั้งวัน/คาบให้ */
+  function openForm(slot: Slot | null, preset?: { day: number; period: number }) {
     setForm({
-      day: String(slot?.day_of_week ?? 1),
-      period: String(slot?.period_number ?? 1),
+      day: String(slot?.day_of_week ?? preset?.day ?? 1),
+      period: String(slot?.period_number ?? preset?.period ?? 1),
       subject_id: slot?.subject_id ? String(slot.subject_id) : "",
       classroom_id: slot?.classroom_id ? String(slot.classroom_id) : "",
     });
@@ -133,7 +136,8 @@ export default function ScheduleManagementPage() {
   }
 
   async function remove(slot: Slot) {
-    if (!teacher || !window.confirm("ลบคาบนี้ใช่ไหม?")) return;
+    if (!teacher) return;
+    if (!(await confirm({ title: `ลบคาบ ${slot.period_number} ใช่ไหม?`, confirmLabel: "ลบ", danger: true }))) return;
     try {
       await apiFetch(`/api/admin/schedule/table/${teacher.user_id}?teaching_schedule_id=${slot.teaching_schedule_id}`, { method: "DELETE" });
       loadSlots(teacher);
@@ -143,7 +147,8 @@ export default function ScheduleManagementPage() {
   }
 
   async function removeAll() {
-    if (!teacher || !window.confirm(`ลบตารางสอนทั้งหมดของ ${teacher.name} ใช่ไหม?`)) return;
+    if (!teacher) return;
+    if (!(await confirm({ title: `ลบตารางสอนทั้งหมดของ ${teacher.name}?`, description: "ลบทุกคาบของครูท่านนี้ ย้อนกลับไม่ได้", confirmLabel: "ลบทั้งหมด", danger: true }))) return;
     try {
       await apiFetch(`/api/admin/schedule/table/${teacher.user_id}?all=true`, { method: "DELETE" });
       setSlots([]);
@@ -155,10 +160,12 @@ export default function ScheduleManagementPage() {
 
   return (
     <PageContainer>
-      <PageHeader title="จัดการตารางสอน" description="เลือกครู → ดูตาราง • เพิ่ม/แก้ไข/ลบคาบ • ลบทั้งตาราง" />
+      <PageHeader title="จัดการตารางสอน" description="เลือกครู → ดูตาราง • กดช่อง &quot;ว่าง&quot; เพื่อเพิ่มคาบ • แก้ไข/ลบคาบ • ลบทั้งตาราง" />
 
         {loadError && <div className="px-3 py-2 text-sm text-red-700 border border-red-200 rounded-lg bg-red-50">{loadError}</div>}
 
+        {/* รายชื่ออาจารย์ — เลือกแล้วแสดงตารางสอนในหน้าเดียวกัน (ไม่ซ้อน dialog) */}
+        {!teacher && (
         <div className="overflow-hidden bg-white border shadow-sm rounded-xl">
           <div className="p-3 border-b sm:p-4">
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ค้นหาชื่ออาจารย์…" aria-label="ค้นหาอาจารย์" className="h-10 sm:w-80" />
@@ -213,13 +220,20 @@ export default function ScheduleManagementPage() {
           </div>
           <Pagination page={safePage} totalPages={totalPages} onChange={setPage} total={shown.length} />
         </div>
+        )}
 
       {/* ตารางสอนรายครู */}
-      <Dialog open={!!teacher} onOpenChange={(v) => !v && setTeacher(null)}>
-        <DialogContent className="sm:max-w-5xl max-h-[90dvh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>ตารางสอน: {teacher?.name}</DialogTitle>
-          </DialogHeader>
+      {teacher && (
+        <section className="p-3 space-y-4 bg-white border shadow-sm sm:p-4 rounded-xl" aria-label={`ตารางสอนของ ${teacher.name}`}>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <Button variant="outline" className="h-10" onClick={() => setTeacher(null)}>
+              ← รายชื่ออาจารย์
+            </Button>
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold text-gray-900">ตารางสอน: {teacher.name}</h2>
+              <p className="text-xs text-gray-500">{teacher.subject_group_name ?? "ไม่มีกลุ่มสาระ"} · {slots.length} คาบ</p>
+            </div>
+          </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <select aria-label="กรองรายวิชา" className={`${selectCls} h-10 sm:w-64`} value={filterSubject} onChange={(e) => setFilterSubject(e.target.value)}>
@@ -241,7 +255,9 @@ export default function ScheduleManagementPage() {
                   {slotsLoading ? (
                     <div className="h-10 m-3 bg-gray-100 rounded animate-pulse" />
                   ) : items.length === 0 ? (
-                    <div className="px-3 py-3 text-sm text-gray-400">ไม่มีคาบสอน</div>
+                    <button type="button" onClick={() => openForm(null, { day: di + 1, period: 1 })} className="w-full px-3 py-3 text-sm text-left text-gray-400 hover:text-purple-700">
+                      ไม่มีคาบสอน · + เพิ่มคาบ
+                    </button>
                   ) : (
                     <ul className="divide-y">
                       {items.map((s) => (
@@ -288,7 +304,14 @@ export default function ScheduleManagementPage() {
                           {slotsLoading ? (
                             <div className="h-10 bg-gray-100 rounded animate-pulse" />
                           ) : cell.length === 0 ? (
-                            <div className="p-2 text-xs text-center text-gray-400 border border-dashed rounded-lg">ว่าง</div>
+                            <button
+                              type="button"
+                              aria-label={`เพิ่มคาบ ${p.period_number} วัน${day}`}
+                              onClick={() => openForm(null, { day: di + 1, period: p.period_number })}
+                              className="w-full p-2 text-xs text-center text-gray-400 border border-dashed rounded-lg hover:border-purple-400 hover:bg-purple-50 hover:text-purple-700"
+                            >
+                              ว่าง <span className="hidden lg:inline">+ เพิ่ม</span>
+                            </button>
                           ) : (
                             cell.map((s) => (
                               <div key={s.teaching_schedule_id} className="p-2 mb-1 text-xs bg-white border rounded-lg">
@@ -310,8 +333,8 @@ export default function ScheduleManagementPage() {
               </tbody>
             </table>
           </div>
-        </DialogContent>
-      </Dialog>
+        </section>
+      )}
 
       {/* เพิ่ม/แก้ไขคาบ */}
       <Dialog open={!!editing} onOpenChange={(v) => !v && !saving && setEditing(null)}>

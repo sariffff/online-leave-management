@@ -93,7 +93,7 @@ const rule = (description: string, color: LeaveColor, sortOrder: number, extra: 
 });
 
 /** คำอธิบาย/สีเดิมของประเภทลา 1–11 (ย้ายมาจาก leave-type.tsx) */
-export const DEFAULT_LEAVE_RULES: Record<string, LeaveTypeRule> = {
+const DEFAULT_LEAVE_RULES: Record<string, LeaveTypeRule> = {
   "1": rule("การลาเนื่องจากเจ็บป่วย (เกิน 3 วันต้องมีใบรับรองแพทย์)", "red", 1, { docRequiredAfterDays: 3 }),
   "2": rule("การลาเพื่อจัดการธุระส่วนตัว", "blue", 2),
   "3": rule("การลาพักผ่อนประจำปี", "green", 3),

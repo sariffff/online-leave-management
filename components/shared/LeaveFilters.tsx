@@ -1,5 +1,6 @@
 "use client";
 
+import ThaiDateInput from "@/components/shared/ThaiDateInput";
 import { useEffect, useState } from "react";
 import { ChevronDown, Filter, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -105,11 +106,11 @@ export default function LeaveFilters({
         )}
         <div className="space-y-1">
           {label("ตั้งแต่วันที่", "f-start")}
-          <Input id="f-start" className="h-10" type="date" value={draft.startDate} onChange={(e) => set({ startDate: e.target.value })} />
+          <ThaiDateInput id="f-start" value={draft.startDate} onChange={(v) => set({ startDate: v })} />
         </div>
         <div className="space-y-1">
           {label("ถึงวันที่", "f-end")}
-          <Input id="f-end" className="h-10" type="date" value={draft.endDate} min={draft.startDate || undefined} onChange={(e) => set({ endDate: e.target.value })} />
+          <ThaiDateInput id="f-end" value={draft.endDate} min={draft.startDate || undefined} onChange={(v) => set({ endDate: v })} />
         </div>
         <div className="space-y-1">
           {label("ปีงบประมาณ (พ.ศ.)", "f-fy")}

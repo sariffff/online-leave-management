@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiFetch } from "@/lib/client/api";
+import { useConfirm } from "@/components/shared/ConfirmDialog";
 import { THEMES, type GeneralSettings, type ThemeKey } from "@/lib/settings-schema";
 
 type Props = {
@@ -56,6 +57,7 @@ export default function GeneralTab({ value, defaults, onDirty, onSaved }: Props)
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const confirm = useConfirm();
 
   // โลโก้บันทึกแยกทันทีที่อัปโหลด จึงไม่นับเป็น "ยังไม่บันทึก"
   const dirty = useMemo(() => JSON.stringify({ ...form, logoUrl: null }) !== JSON.stringify({ ...value, logoUrl: null }), [form, value]);
@@ -102,7 +104,7 @@ export default function GeneralTab({ value, defaults, onDirty, onSaved }: Props)
   }
 
   async function removeLogo() {
-    if (!window.confirm("เอาโลโก้ออก? (ย้อนกลับได้จากประวัติการแก้ไข)")) return;
+    if (!(await confirm({ title: "เอาโลโก้ออก?", description: "ย้อนกลับได้จากประวัติการแก้ไข", confirmLabel: "เอาออก", danger: true }))) return;
     setUploading(true);
     try {
       await apiFetch("/api/admin/settings/logo", { method: "DELETE" });

@@ -1,5 +1,6 @@
 "use client";
 
+import ThaiDateInput from "@/components/shared/ThaiDateInput";
 import { useState } from "react";
 import { PageContainer, PageHeader } from "@/components/shell/Page";
 import { Button } from "@/components/ui/button";
@@ -48,12 +49,12 @@ export default function SubstitutionHistoryPage() {
               <p className="text-xs text-gray-500">ถ้าระบุเลขใบลา จะไม่ใช้ช่วงวันที่</p>
             </div>
             <div className="space-y-1">
-              <label className="text-sm font-medium">ตั้งแต่วันที่</label>
-              <Input type="date" value={draft.from} disabled={!!draft.leaveId} onChange={(e) => setDraft({ ...draft, from: e.target.value })} />
+              <label htmlFor="sh-from" className="text-sm font-medium">ตั้งแต่วันที่</label>
+              <ThaiDateInput id="sh-from" value={draft.from} disabled={!!draft.leaveId} onChange={(v) => setDraft({ ...draft, from: v })} />
             </div>
             <div className="space-y-1">
-              <label className="text-sm font-medium">ถึงวันที่</label>
-              <Input type="date" min={draft.from || undefined} value={draft.to} disabled={!!draft.leaveId} onChange={(e) => setDraft({ ...draft, to: e.target.value })} />
+              <label htmlFor="sh-to" className="text-sm font-medium">ถึงวันที่</label>
+              <ThaiDateInput id="sh-to" min={draft.from || undefined} value={draft.to} disabled={!!draft.leaveId} onChange={(v) => setDraft({ ...draft, to: v })} />
             </div>
           </div>
           <div className="flex gap-2">

@@ -15,7 +15,7 @@ export class HttpError extends Error {
   }
 }
 
-export const badRequest = (msg = "BAD_REQUEST", detail?: unknown) => new HttpError(400, msg, detail);
+const badRequest = (msg = "BAD_REQUEST", detail?: unknown) => new HttpError(400, msg, detail);
 export const notFound = (msg = "NOT_FOUND") => new HttpError(404, msg);
 export const conflict = (msg = "CONFLICT", detail?: unknown) => new HttpError(409, msg, detail);
 
@@ -23,7 +23,7 @@ export function json<T>(data: T, init?: ResponseInit) {
   return NextResponse.json(data, init);
 }
 
-export function fail(status: number, error: string, detail?: unknown) {
+function fail(status: number, error: string, detail?: unknown) {
   return NextResponse.json(detail === undefined ? { error } : { error, detail }, { status });
 }
 

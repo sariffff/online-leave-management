@@ -5,6 +5,7 @@ import "./globals.css";
 import HeaderComponent from "@/components/universal/HeaderComponent";
 import { NavProvider } from "@/components/shell/NavContext";
 import { SettingsProvider } from "@/components/shell/SettingsContext";
+import { ConfirmProvider } from "@/components/shared/ConfirmDialog";
 import { Toaster } from "react-hot-toast";
 import { requireAuth } from "@/lib/guard";
 import { getPublicSettings } from "@/lib/settings";
@@ -51,10 +52,12 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
       {/* กรอบหน้า: สูงเท่าจอพอดี header ไม่หด ส่วนล่างเลื่อนในตัว → ไม่มีการเลื่อนซ้อน 2 ชั้น */}
       <body className={`${latin.variable} ${thai.variable} flex h-dvh flex-col overflow-hidden antialiased`}>
         <SettingsProvider value={settings}>
-          <NavProvider signedIn={!!initialMe}>
-            <HeaderComponent initialMe={initialMe} />
-            <div className="flex-1 min-h-0 overflow-y-auto">{children}</div>
-          </NavProvider>
+          <ConfirmProvider>
+            <NavProvider signedIn={!!initialMe}>
+              <HeaderComponent initialMe={initialMe} />
+              <div className="flex-1 min-h-0 overflow-y-auto">{children}</div>
+            </NavProvider>
+          </ConfirmProvider>
         </SettingsProvider>
         <Toaster position="top-center" toastOptions={{ duration: 4000 }} />
       </body>

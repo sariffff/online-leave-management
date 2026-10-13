@@ -11,6 +11,7 @@ import { getFiscalYearFromISO } from "@/utils/year";
 import { thaiDate } from "@/lib/format";
 import { checkLeaveRules, describeRule } from "@/lib/leave/rules";
 import { usePublicSettings } from "@/components/shell/SettingsContext";
+import ThaiDateInput from "@/components/shared/ThaiDateInput";
 import { acceptOf, checkAttachment, describeAttachments } from "@/lib/settings-schema";
 
 type QuotaItem = { unlimited: boolean; total: number | null; used: number; reserved: number; available: number | null };
@@ -86,17 +87,15 @@ export default function Step2LeaveForm({
   const needsCert = docAfter !== null && totalDays > docAfter && form.attachments.length === 0;
   const ruleLines = useMemo(() => describeRule(rule), [rule]);
 
-  function pickDate(field: "startDate" | "endDate", raw: string, el: HTMLInputElement) {
-    el.setCustomValidity("");
+  function pickDate(field: "startDate" | "endDate", raw: string) {
+    setErrors((e) => ({ ...e, [field]: "" }));
     if (!raw) return set({ [field]: "" } as Partial<typeof form>);
     if (isNonWorkingISO(raw, holidays)) {
-      el.setCustomValidity("ห้ามเลือกวันเสาร์-อาทิตย์หรือวันหยุดราชการ");
-      el.reportValidity();
+      setErrors((e) => ({ ...e, [field]: "ห้ามเลือกวันเสาร์-อาทิตย์หรือวันหยุดราชการ" }));
       return;
     }
     if (field === "endDate" && form.startDate && raw < form.startDate) {
-      el.setCustomValidity("วันที่สิ้นสุดต้องไม่น้อยกว่าวันที่เริ่มลา");
-      el.reportValidity();
+      setErrors((e) => ({ ...e, endDate: "วันที่สิ้นสุดต้องไม่น้อยกว่าวันที่เริ่มลา" }));
       return;
     }
     if (field === "startDate") set({ startDate: raw, endDate: form.endDate && form.endDate < raw ? "" : form.endDate });
@@ -147,7 +146,8 @@ export default function Step2LeaveForm({
   }
 
   const submit = () => validate() && onNext({ ...form, totalDays });
-  const inputCls = (bad?: string) => `min-w-0 flex-1 px-3 py-2 bg-white border rounded-lg focus:ring-2 focus:ring-blue-500 ${bad ? "border-red-500" : "border-gray-300"}`;
+  // ปฏิทิน: วันเสาร์-อาทิตย์/วันหยุดเลือกไม่ได้ (แสดงชื่อวันหยุดเมื่อชี้)
+  const dayNote = (iso: string) => (isNonWorkingISO(iso, holidays) ? holidays.get(iso) || "วันหยุดสุดสัปดาห์" : null);
   const sameDay = !!form.startDate && form.startDate === form.endDate;
 
   return (
@@ -197,7 +197,7 @@ export default function Step2LeaveForm({
           <div>
             <label className="block mb-2 text-sm font-medium text-gray-700">วันที่เริ่มลา <span className="text-red-500">*</span></label>
             <div className="flex gap-2 sm:gap-3">
-              <input type="date" aria-label="วันที่เริ่มลา" value={form.startDate} onChange={(e) => pickDate("startDate", e.target.value, e.currentTarget)} className={inputCls(errors.startDate)} />
+              <ThaiDateInput aria-label="วันที่เริ่มลา" className="flex-1 min-w-0" value={form.startDate} onChange={(v) => pickDate("startDate", v)} invalid={!!errors.startDate} dayNote={dayNote} />
               <select value={form.startType} onChange={(e) => set({ startType: e.target.value as HalfType })} disabled={!form.startDate || !rule.allowHalfDay} aria-label="ช่วงเวลาวันเริ่ม" className="w-28 px-2 py-2 bg-white border border-gray-300 rounded-lg shrink-0 sm:w-32">
                 {HALF_OPTIONS.map((o) => <option key={o}>{o}</option>)}
               </select>
@@ -208,7 +208,7 @@ export default function Step2LeaveForm({
           <div>
             <label className="block mb-2 text-sm font-medium text-gray-700">วันที่สิ้นสุดการลา <span className="text-red-500">*</span></label>
             <div className="flex gap-2 sm:gap-3">
-              <input type="date" aria-label="วันที่สิ้นสุดการลา" min={form.startDate || undefined} value={form.endDate} onChange={(e) => pickDate("endDate", e.target.value, e.currentTarget)} className={inputCls(errors.endDate)} />
+              <ThaiDateInput aria-label="วันที่สิ้นสุดการลา" className="flex-1 min-w-0" min={form.startDate || undefined} value={form.endDate} onChange={(v) => pickDate("endDate", v)} invalid={!!errors.endDate} dayNote={dayNote} />
               <select value={form.endType} onChange={(e) => set({ endType: e.target.value as HalfType })} disabled={sameDay || !form.endDate || !rule.allowHalfDay} aria-label="ช่วงเวลาวันสิ้นสุด" className="w-28 px-2 py-2 bg-white border border-gray-300 rounded-lg shrink-0 sm:w-32">
                 {HALF_OPTIONS.map((o) => <option key={o}>{o}</option>)}
               </select>

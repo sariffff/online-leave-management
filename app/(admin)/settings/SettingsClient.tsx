@@ -11,6 +11,7 @@ import PeriodsTab from "@/components/admin/settings/PeriodsTab";
 import AttachmentsTab from "@/components/admin/settings/AttachmentsTab";
 import FactoryResetButton from "@/components/admin/settings/FactoryResetButton";
 import { apiFetch } from "@/lib/client/api";
+import { useConfirm } from "@/components/shared/ConfirmDialog";
 import type { AppSettings } from "@/lib/settings-schema";
 
 type TabKey = "general" | "leaveTypes" | "periods" | "attachments" | "history";
@@ -31,10 +32,11 @@ export default function SettingsClient({ initial, defaults, initialTab }: { init
   const [dirty, setDirty] = useState(false);
   // เปลี่ยนค่า = โหลดหมวดที่เปิดอยู่ใหม่ (หลังคืนค่าเริ่มต้น)
   const [reloadKey, setReloadKey] = useState(0);
+  const confirm = useConfirm();
 
-  function go(next: TabKey) {
+  async function go(next: TabKey) {
     if (next === tab) return;
-    if (dirty && !window.confirm("มีการแก้ไขที่ยังไม่บันทึก ต้องการออกจากหมวดนี้หรือไม่?")) return;
+    if (dirty && !(await confirm({ title: "ออกโดยไม่บันทึก?", description: "การแก้ไขในหมวดนี้ยังไม่ได้บันทึก จะหายไปถ้าออก", confirmLabel: "ออกโดยไม่บันทึก", danger: true }))) return;
     setDirty(false);
     setTab(next);
     router.replace(`/settings?tab=${next}`, { scroll: false });

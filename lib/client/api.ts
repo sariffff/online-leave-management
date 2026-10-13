@@ -1,5 +1,5 @@
 // fetch ฝั่ง client แบบมี type และโยน ApiError เมื่อ response ไม่ ok
-export class ApiError extends Error {
+class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
@@ -36,7 +36,7 @@ export async function apiFetch<T = unknown>(url: string, opts: Opts = {}): Promi
 }
 
 /** ข้อความผิดพลาดที่ผู้ใช้อ่านเข้าใจ (รหัสจาก API → ภาษาไทย) */
-export const ERROR_TH: Record<string, string> = {
+const ERROR_TH: Record<string, string> = {
   UNAUTHORIZED: "กรุณาเข้าสู่ระบบใหม่",
   Unauthorized: "กรุณาเข้าสู่ระบบใหม่",
   Forbidden: "ไม่มีสิทธิ์ดำเนินการ",
@@ -57,6 +57,8 @@ export const ERROR_TH: Record<string, string> = {
   TOO_MANY_FILES: "แนบไฟล์เกินจำนวนที่กำหนด",
   SUBSTITUTE_NOT_FREE: "ครูท่านนี้ไม่ว่างในคาบดังกล่าว",
   ALREADY_ASSIGNED: "คาบนี้มีผู้สอนแทนแล้ว",
+  REASON_REQUIRED: "กรุณาระบุเหตุผล เพื่อให้ผู้ยื่นทราบว่าต้องแก้ไขอะไร",
+  SUBSTITUTION_NOT_FOUND: "ไม่พบการมอบหมายนี้ (อาจถูกยกเลิกไปแล้ว)",
   DATE_NOT_MATCH_SCHEDULE: "วันที่ไม่ตรงกับวันสอนของคาบนี้",
   CANNOT_SUBSTITUTE_SELF: "ไม่สามารถให้ผู้ลาสอนแทนตัวเองได้",
   NOT_COMPLETE: "ยังมอบหมายสอนแทนไม่ครบทุกคาบ",
