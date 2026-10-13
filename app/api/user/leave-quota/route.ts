@@ -1,5 +1,6 @@
 import { route, json } from "@/lib/http";
 import { computeQuota } from "@/lib/leave/quota";
+import { quotaForDisplay } from "@/lib/leave/types";
 import { normalizeFiscalYear } from "@/lib/format";
 import { getFiscalYearFromISO } from "@/utils/year";
 import { ROLE } from "@/lib/roles";
@@ -10,6 +11,6 @@ export const runtime = "nodejs";
 export const GET = route([ROLE.user], async ({ g, url }) => {
   const fiscalYear =
     normalizeFiscalYear(url.searchParams.get("year")) ?? getFiscalYearFromISO(new Date().toISOString().slice(0, 10));
-  const items = await computeQuota(g.user.id, fiscalYear);
+  const items = await quotaForDisplay(await computeQuota(g.user.id, fiscalYear));
   return json({ ok: true, userId: g.user.id, year: fiscalYear, items });
 });

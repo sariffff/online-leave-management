@@ -1,4 +1,4 @@
-import { Document, Font, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { Document, Font, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 
 // ฟอนต์ไทยอยู่ที่ public/fonts/Sarabun-*.ttf
 Font.register({
@@ -9,6 +9,9 @@ Font.registerHyphenationCallback((word) => [word]); // ไม่ตัดคำ�
 
 const styles = StyleSheet.create({
   page: { padding: 40, fontFamily: "Sarabun", fontSize: 13, lineHeight: 1.6 },
+  head: { alignItems: "center", marginBottom: 8 },
+  logo: { width: 56, height: 56, objectFit: "contain", marginBottom: 4 },
+  school: { fontSize: 14, fontWeight: "bold" },
   title: { fontSize: 18, textAlign: "center", fontWeight: "bold", marginBottom: 18 },
   right: { textAlign: "right", marginBottom: 16 },
   row: { marginBottom: 6, flexDirection: "row" },
@@ -22,6 +25,8 @@ export type LeavePdfData = {
   code: string;
   printedAtText: string;
   recipient: string;
+  schoolName?: string;
+  logoUrl?: string;
   applicantName: string;
   leaveTypeName: string;
   reason: string;
@@ -40,6 +45,13 @@ export default function LeavePdfDoc({ data: d }: { data: LeavePdfData }) {
   return (
     <Document>
       <Page size="A4" style={styles.page}>
+        {(d.logoUrl || d.schoolName) && (
+          <View style={styles.head}>
+            {/* eslint-disable-next-line jsx-a11y/alt-text */}
+            {d.logoUrl ? <Image src={d.logoUrl} style={styles.logo} /> : null}
+            {d.schoolName ? <Text style={styles.school}>{d.schoolName}</Text> : null}
+          </View>
+        )}
         <Text style={styles.title}>
           ใบ{d.leaveTypeName} รหัสใบลาที่ {d.code}
         </Text>

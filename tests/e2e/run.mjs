@@ -179,6 +179,15 @@ async function cleanup() {
     await step("users", () => admin.from("users").delete({ count: "exact" }).in("user_id", ids));
     for (const id of ids) await step(`auth ${id.slice(0, 8)}`, () => admin.auth.admin.deleteUser(id));
   }
+  {
+    const lt = (await admin.from("leavetype").select("leave_type_id").like("leave_type_name", `${TEST_PREFIX}%`)).data ?? [];
+    const ltIds = lt.map((x) => x.leave_type_id);
+    if (ltIds.length) {
+      await step("leaverequest(ประเภททดสอบ)", () => admin.from("leaverequest").delete({ count: "exact" }).in("leave_type_id", ltIds));
+      await step("userleavequota(ประเภททดสอบ)", () => admin.from("userleavequota").delete({ count: "exact" }).in("leave_type_id", ltIds));
+      await step("leavetype(ทดสอบ)", () => admin.from("leavetype").delete({ count: "exact" }).in("leave_type_id", ltIds));
+    }
+  }
   await step("subject", () => admin.from("subject").delete({ count: "exact" }).like("subject_name", `${TEST_PREFIX}%`));
   await step("classroom", () => admin.from("classroom").delete({ count: "exact" }).like("classroom_name", `${TEST_PREFIX}%`));
   await step("level", () => admin.from("level").delete({ count: "exact" }).like("level_name", `${TEST_PREFIX}%`));
@@ -214,6 +223,38 @@ function leaveForm(fields, files = []) {
 const U = {};
 const ids = {};
 const startedAt = new Date();
+
+/* ---------------- การตั้งค่าระบบ: เก็บ/คืนค่าเดิม ---------------- */
+let settingsSnapshot = null;
+const uploadedLogos = [];
+const SETTINGS_FILES = ["settings.json", "settings-history.json"];
+async function snapshotSettings() {
+  const snap = {};
+  for (const f of SETTINGS_FILES) {
+    const { data } = await admin.storage.from("app-config").download(f);
+    snap[f] = data ? await data.text() : null;
+  }
+  return snap;
+}
+async function restoreSettings(snap) {
+  // เขียนฉบับเดิมกลับด้วยเลขรุ่นใหม่ (_rev) — เซิร์ฟเวอร์ที่รันอยู่จะยอมรับเฉพาะฉบับที่ใหม่กว่าที่ตัวเองรู้
+  const log = [];
+  const rev = Date.now() + 1000;
+  for (const f of SETTINGS_FILES) {
+    let value;
+    if (snap[f] === null) value = f === "settings.json" ? { _rev: rev } : { _rev: rev, items: [] };
+    else {
+      const parsed = JSON.parse(snap[f]);
+      value = Array.isArray(parsed) ? { _rev: rev, items: parsed } : { ...parsed, _rev: rev };
+    }
+    const { error } = await admin.storage.from("app-config").upload(f, new Blob([JSON.stringify(value)], { type: "application/json" }), { upsert: true, contentType: "application/json", cacheControl: "0" });
+    log.push(`${f}: ${error ? "ERROR " + error.message : snap[f] === null ? "คืนเป็นค่าเริ่มต้น (เดิมไม่มีไฟล์)" : "คืนค่าเดิม"}`);
+  }
+  const keys = uploadedLogos.map((u) => decodeURIComponent(u.split("/branding/")[1] ?? "")).filter(Boolean);
+  if (keys.length) await admin.storage.from("branding").remove(keys);
+  log.push(`โลโก้ทดสอบ: ลบ ${keys.length} ไฟล์`);
+  return log;
+}
 
 try {
   /* -------------------------------------------------------------- เตรียม */
@@ -846,7 +887,7 @@ try {
     const h = await post(U.admin, "/api/admin/holiday", { holiday_name: `${TEST_PREFIX}หยุดโรงเรียน`, holiday_date: "2026-11-25" });
     expectStatus(h, 201);
     ids.holiday2 = h.json.item.holiday_id;
-    const r = await submit(U.ta, { ...base1, date_start: "2026-11-23", date_end: "2026-11-27" });
+    const r = await submit(U.ta, { ...base1, date_start: "2026-11-23", date_end: "2026-11-27" }, [[pdfBlob(), "ใบรับรองแพทย์.pdf"]]);
     expectStatus(r, 201);
     ids.L3 = r.json.id;
     expect(r.json.total_day === 4, show(r));
@@ -1529,6 +1570,323 @@ try {
     });
   }
 
+  /* -------------------------------------------------------------- 19. ตั้งค่าระบบ */
+  section("19. ตั้งค่าระบบ (admin)");
+  {
+    // เก็บค่าเดิมไว้ คืนให้ใน finally (เทสนี้แก้การตั้งค่าจริง)
+    settingsSnapshot = await snapshotSettings();
+    const pub = async () => (await call(null, "GET", "/api/settings/public")).json;
+    const original = (await pub()).general;
+    const NEW_NAME = `${TEST_PREFIX}ระบบลาทดสอบ ${RUN}`;
+
+    await t("SET-01", "อ่านค่าสาธารณะได้โดยไม่ต้องล็อกอิน (ชื่อระบบ/สี/คาบ/ไฟล์แนบ)", async () => {
+      const r = await call(null, "GET", "/api/settings/public");
+      expectStatus(r, 200);
+      expect(r.json.general?.systemName && r.json.periods?.periods?.length && r.json.attachments?.maxFiles, show(r));
+      return `ชื่อระบบ: ${r.json.general.systemName}`;
+    });
+    await t("SET-02", "บทบาทอื่นอ่าน/แก้การตั้งค่าไม่ได้ (403)", async () => {
+      for (const u of [U.ta, U.sup, U.dir, U.aca]) {
+        expectStatus(await get(u, "/api/admin/settings"), 403);
+        expectStatus(await put(u, "/api/admin/settings/general", { systemName: "hack" }), 403);
+        expectStatus(await get(u, "/api/admin/settings/history"), 403);
+      }
+    });
+    await t("SET-03", "admin อ่านการตั้งค่าทั้งหมด + ค่าเริ่มต้น", async () => {
+      const r = await get(U.admin, "/api/admin/settings");
+      expectStatus(r, 200);
+      expect(r.json.settings?.general && r.json.defaults?.general && r.json.settings.leaveTypes?.["1"], show(r));
+    });
+    await t("SET-04", "ค่าผิด → 422 พร้อมข้อความไทย (ชื่อว่าง, สีไม่มีจริง, คาบซ้อน, ไฟล์ใหญ่เกิน) / หมวดไม่มีจริง → 404", async () => {
+      const a = await put(U.admin, "/api/admin/settings/general", { systemName: "  " });
+      expect(a.status === 422 && /ชื่อระบบ/.test(a.json.detail), show(a));
+      expectStatus(await put(U.admin, "/api/admin/settings/general", { theme: "rainbow" }), 422);
+      expectStatus(
+        await put(U.admin, "/api/admin/settings/periods", { periods: [{ start_time: "08:00", end_time: "09:00" }, { start_time: "08:30", end_time: "09:30" }] }),
+        422
+      );
+      expectStatus(await put(U.admin, "/api/admin/settings/attachments", { maxFileMB: 999 }), 422);
+      expectStatus(await put(U.admin, "/api/admin/settings/nope", {}), 404);
+      expect((await pub()).general.systemName === original.systemName, "ค่าผิดแต่ถูกบันทึก");
+    });
+    await t("SET-05", "เปลี่ยนชื่อระบบ + สีเขียว → หัวเว็บ, หน้าเข้าสู่ระบบ, ชื่อแท็บ, สี เปลี่ยนตามทันที", async () => {
+      const r = await put(U.admin, "/api/admin/settings/general", { systemName: NEW_NAME, theme: "green" });
+      expectStatus(r, 200);
+      expect((await pub()).general.systemName === NEW_NAME, "ค่าสาธารณะไม่เปลี่ยน");
+      const login = await get(null, "/login");
+      expect(login.text.includes(NEW_NAME), "หน้าเข้าสู่ระบบไม่แสดงชื่อใหม่");
+      expect(new RegExp(`<title>[^<]*${NEW_NAME}`).test(login.text), "ชื่อแท็บ (<title>) ไม่เปลี่ยน");
+      expect(/--brand:\s*#059669/.test(login.text), "สีของระบบไม่เปลี่ยน");
+      const page = await get(U.ta, "/leave-history", { activeRole: "2" });
+      expect(page.text.includes(NEW_NAME), "หัวเว็บของผู้ใช้ไม่แสดงชื่อใหม่");
+    });
+    await t("SET-06", "ประวัติบันทึกว่าใครแก้อะไร (ค่าเดิม → ค่าใหม่)", async () => {
+      const r = await get(U.admin, "/api/admin/settings/history?pageSize=5");
+      expectStatus(r, 200);
+      const h = r.json.data[0];
+      expect(h && h.section === "general" && h.after.systemName === NEW_NAME && h.before.systemName === original.systemName && h.by.id === U.admin.id, JSON.stringify(h));
+      ids.settingsEntry = h.id;
+    });
+    await t("SET-07", "ย้อนกลับจากประวัติ → ชื่อ/สีกลับเป็นค่าเดิม และบันทึกการย้อนกลับเป็นประวัติใหม่", async () => {
+      expectStatus(await post(U.admin, `/api/admin/settings/history/${ids.settingsEntry}/revert`), 200);
+      const now = (await pub()).general;
+      expect(now.systemName === original.systemName && now.theme === original.theme, JSON.stringify(now));
+      const r = await get(U.admin, "/api/admin/settings/history?pageSize=1");
+      expect(/^ย้อนกลับ/.test(r.json.data[0]?.label), JSON.stringify(r.json.data[0]));
+      expectStatus(await post(U.admin, "/api/admin/settings/history/not-a-real-id/revert"), 404);
+    });
+    await t("SET-08", "โลโก้: ชนิดไฟล์ผิด/ใหญ่เกิน → 422, PNG → 201 เปิดดูได้, เอาออกได้", async () => {
+      const bad = new FormData();
+      bad.append("file", new Blob(["<svg/>"], { type: "image/svg+xml" }), "a.svg");
+      expectStatus(await post(U.admin, "/api/admin/settings/logo", bad), 422);
+      const big = new FormData();
+      big.append("file", new Blob([new Uint8Array(1024 * 1024 + 10)], { type: "image/png" }), "big.png");
+      expectStatus(await post(U.admin, "/api/admin/settings/logo", big), 422);
+      const png = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0));
+      const ok = new FormData();
+      ok.append("file", new Blob([png], { type: "image/png" }), "logo.png");
+      const up = await post(U.admin, "/api/admin/settings/logo", ok);
+      expectStatus(up, 201);
+      uploadedLogos.push(up.json.logoUrl);
+      expect((await fetch(up.json.logoUrl)).status === 200, "เปิดไฟล์โลโก้ไม่ได้");
+      expect((await pub()).general.logoUrl === up.json.logoUrl, "ค่าสาธารณะไม่มีโลโก้");
+      expectStatus(await del(U.admin, "/api/admin/settings/logo"), 200);
+      expect((await pub()).general.logoUrl === null, "เอาโลโก้ออกไม่สำเร็จ");
+      // ระบบจริงอาจมีโลโก้อยู่แล้ว → ใส่โลโก้เดิมกลับ (ไฟล์ตั้งค่าเดิมคืนให้อีกครั้งตอนล้างข้อมูล)
+      if (original.logoUrl) expectStatus(await put(U.admin, "/api/admin/settings/general", { logoUrl: original.logoUrl }), 200);
+    });
+    await t("SET-09", "บันทึกค่าเดิมซ้ำ (ไม่มีอะไรเปลี่ยน) → ไม่เพิ่มประวัติ", async () => {
+      const before = (await get(U.admin, "/api/admin/settings/history?pageSize=1")).json.total;
+      expectStatus(await put(U.admin, "/api/admin/settings/general", original), 200);
+      const after = (await get(U.admin, "/api/admin/settings/history?pageSize=1")).json.total;
+      expect(before === after, `ประวัติเพิ่มจาก ${before} เป็น ${after}`);
+    });
+    const latest = async () => (await get(U.admin, "/api/admin/settings/history?pageSize=1")).json.data[0];
+    await t("SET-10", "รายการที่เป็นการย้อนกลับ ย้อนซ้ำไม่ได้ (409) และรายการที่ถูกย้อนแล้วย้อนอีกไม่ได้ — กันกดวนไปมา", async () => {
+      expectStatus(await put(U.admin, "/api/admin/settings/general", { footerText: `${TEST_PREFIX}ท้ายเมนู` }), 200);
+      const edit = await latest();
+      expect(edit.blockedReason === null, `รายการแก้ไขปกติควรย้อนได้: ${edit.blockedReason}`);
+      expectStatus(await post(U.admin, `/api/admin/settings/history/${edit.id}/revert`), 200);
+      const rev = await latest();
+      expect(rev.revertOf === edit.id && rev.blockedReason, JSON.stringify(rev));
+      const again = await post(U.admin, `/api/admin/settings/history/${rev.id}/revert`);
+      expect(again.status === 409 && again.json.error === "CANNOT_REVERT", show(again));
+      const twice = await post(U.admin, `/api/admin/settings/history/${edit.id}/revert`);
+      expect(twice.status === 409, show(twice));
+      expect((await pub()).general.footerText === original.footerText, "ข้อความท้ายเมนูไม่กลับเป็นค่าเดิม");
+    });
+    await t("SET-11", "คืนค่าเริ่มต้น: หมวดผิด → 422, บทบาทอื่น → 403, หมวดทั่วไป + กฎประเภทการลา กลับเป็นค่าตั้งต้น แล้วย้อนกลับได้", async () => {
+      expectStatus(await post(U.ta, "/api/admin/settings/reset", { sections: ["general"] }), 403);
+      expectStatus(await post(U.admin, "/api/admin/settings/reset", { sections: [] }), 422);
+      expectStatus(await post(U.admin, "/api/admin/settings/reset", { sections: ["nope"] }), 422);
+      const defaults = (await get(U.admin, "/api/admin/settings")).json.defaults;
+      expectStatus(await put(U.admin, "/api/admin/settings/general", { systemName: NEW_NAME }), 200);
+      expectStatus(await patch(U.admin, "/api/admin/leave-types/2", { minNoticeDays: 7 }), 200);
+      const r = await post(U.admin, "/api/admin/settings/reset", { sections: ["general", "leaveTypes"] });
+      expectStatus(r, 200);
+      const s = (await get(U.admin, "/api/admin/settings")).json.settings;
+      expect(JSON.stringify(s.general) === JSON.stringify(defaults.general), `ทั่วไปไม่ตรงค่าเริ่มต้น: ${s.general.systemName}`);
+      expect(s.leaveTypes["2"].minNoticeDays === null && s.leaveTypes["1"].docRequiredAfterDays === 3, JSON.stringify(s.leaveTypes["2"]));
+      // ย้อนกลับการคืนค่าเริ่มต้นกฎประเภทการลา (รายการล่าสุด) → กฎที่ตั้งไว้กลับมา
+      const h = await latest();
+      expect(h.key === "reset" && h.blockedReason === null, JSON.stringify(h));
+      expectStatus(await post(U.admin, `/api/admin/settings/history/${h.id}/revert`), 200);
+      expect((await get(U.admin, "/api/admin/settings")).json.settings.leaveTypes["2"].minNoticeDays === 7, "ย้อนการคืนค่าเริ่มต้นไม่สำเร็จ");
+      // คืนสภาพให้เทสส่วนถัดไป (ไฟล์ตั้งค่าเดิมคืนให้อีกครั้งตอนล้างข้อมูล)
+      expectStatus(await patch(U.admin, "/api/admin/leave-types/2", { minNoticeDays: null }), 200);
+      expectStatus(await put(U.admin, "/api/admin/settings/general", original), 200);
+      return `คืนค่า: ${r.json.sections.join(", ")}`;
+    });
+  }
+
+  /* -------------------------------------------------------------- 20. ประเภทการลาและกฎการลา */
+  section("20. ประเภทการลาและกฎการลา (admin + บังคับกฎ)");
+  {
+    settingsSnapshot ??= await snapshotSettings();
+    const TYPE_NAME = `${TEST_PREFIX}ลาทดสอบกฎ ${RUN}`;
+    const LT = "/api/admin/leave-types";
+    const isoAdd = (iso, n) => new Date(Date.parse(`${iso}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+    const dow = (iso) => new Date(`${iso}T00:00:00Z`).getUTCDay();
+    const todayTH = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+    /** วันทำการแรกที่ ≥ วันที่ให้มา */
+    const weekday = (iso) => {
+      let d = iso;
+      while (dow(d) === 0 || dow(d) === 6) d = isoAdd(d, 1);
+      return d;
+    };
+    const pdf = () => [[pdfBlob(), "doc.pdf"]];
+    const submitT = (fields, files = []) => submit(U.ta, { leave_type_id: ids.ruleType, reason: `${TEST_PREFIX}ทดสอบกฎ`, date_start_type: "เต็มวัน", date_end_type: "เต็มวัน", ...fields }, files);
+    const errOf = (r) => `${r.status} ${r.json?.error} ${r.json?.detail?.message ?? ""}`;
+
+    await t("LTA-01", "admin ดูประเภทการลาทั้งหมดพร้อมกฎและจำนวนใบลาที่ใช้ / บทบาทอื่น 403", async () => {
+      const r = await get(U.admin, LT);
+      expectStatus(r, 200);
+      const sick = r.json.items.find((x) => x.leave_type_id === 1);
+      expect(sick && sick.rule.docRequiredAfterDays === 3 && typeof sick.usage === "number", JSON.stringify(sick));
+      for (const u of [U.ta, U.sup, U.dir, U.aca]) expectStatus(await get(u, LT), 403);
+      expectStatus(await post(U.ta, LT, { leave_type_name: "hack" }), 403);
+      return `${r.json.items.length} ประเภท`;
+    });
+    await t("LTA-02", "เพิ่ม: ไม่มีชื่อ → 422, ชื่อซ้ำ (ลาป่วย) → 409, ตัวเลขติดลบ → 422", async () => {
+      expectStatus(await post(U.admin, LT, { leave_type_name: " " }), 422);
+      expectStatus(await post(U.admin, LT, { leave_type_name: "ลาป่วย" }), 409);
+      expectStatus(await post(U.admin, LT, { leave_type_name: `${TYPE_NAME}x`, max_leave_day: -1 }), 422);
+      expectStatus(await post(U.admin, LT, { leave_type_name: `${TYPE_NAME}x`, minNoticeDays: -2 }), 422);
+    });
+    await t("LTA-03", "เพิ่มประเภทใหม่พร้อมกฎ (ครั้งละ ≤2 วัน, แนบเอกสารเมื่อ >1 วัน, ล่วงหน้า 5 วัน, ห้ามครึ่งวัน) → 201", async () => {
+      const r = await post(U.admin, LT, {
+        leave_type_name: TYPE_NAME, max_leave_day: 10, carry_over_max: null, note: "ทดสอบ",
+        description: "ประเภททดสอบกฎ", color: "teal", maxDaysPerRequest: 2, docRequiredAfterDays: 1, minNoticeDays: 5, allowHalfDay: false,
+      });
+      expectStatus(r, 201);
+      ids.ruleType = r.json.item.leave_type_id;
+      expect(r.json.item.rule.color === "teal" && r.json.item.rule.minNoticeDays === 5, JSON.stringify(r.json.item.rule));
+      return `id=${ids.ruleType}`;
+    });
+    await t("LTA-04", "บุคลากรเห็นประเภทใหม่พร้อมกฎใน /api/leave-types (เรียงท้ายสุด)", async () => {
+      const r = await get(U.ta, "/api/leave-types");
+      const items = r.json.items;
+      expect(items.at(-1)?.leave_type_id === ids.ruleType && items.at(-1).rule.maxDaysPerRequest === 2, items.map((x) => x.leave_type_id).join(","));
+    });
+
+    const far = weekday("2027-01-11"); // จันทร์ ล่วงหน้าเกิน 5 วันแน่นอน
+    await t("LTA-05", "ระบบหลังบ้านบังคับกฎ: เกินครั้งละ / ไม่แนบเอกสาร / ครึ่งวัน / ยื่นไม่ล่วงหน้าพอ → 422 พร้อมข้อความ", async () => {
+      const a = await submitT({ date_start: far, date_end: isoAdd(far, 2) }, pdf());
+      expect(a.status === 422 && a.json.error === "EXCEEDS_MAX_PER_REQUEST" && a.json.detail.message === "ลาได้ครั้งละไม่เกิน 2 วัน", errOf(a));
+      const b = await submitT({ date_start: far, date_end: isoAdd(far, 1) });
+      expect(b.status === 422 && b.json.error === "DOCUMENT_REQUIRED", errOf(b));
+      const c = await submitT({ date_start: far, date_end: far, date_start_type: "ครึ่งเช้า" });
+      expect(c.status === 422 && c.json.error === "HALF_DAY_NOT_ALLOWED", errOf(c));
+      const soon = weekday(isoAdd(todayTH, 1));
+      const d = await submitT({ date_start: soon, date_end: soon }, pdf());
+      expect(d.status === 422 && d.json.error === "NOTICE_TOO_SHORT", `${soon}: ${errOf(d)}`);
+    });
+    await t("LTA-06", "ยื่นตามกฎครบ (2 วัน + แนบเอกสาร + ล่วงหน้า) → 201", async () => {
+      const r = await submitT({ date_start: far, date_end: isoAdd(far, 1) }, pdf());
+      expectStatus(r, 201);
+      expect(r.json.total_day === 2, errOf(r));
+    });
+    await t("LTA-07", "แก้กฎ: ห้ามยื่นย้อนหลัง (0) → ยื่นวันที่ผ่านมาแล้ว → 422 BACKDATE_TOO_FAR", async () => {
+      expectStatus(await patch(U.admin, `${LT}/${ids.ruleType}`, { minNoticeDays: null, maxBackdateDays: 0 }), 200);
+      const past = weekday(isoAdd(todayTH, -10));
+      const r = await submitT({ date_start: past, date_end: past }, pdf());
+      expect(r.status === 422 && r.json.error === "BACKDATE_TOO_FAR", `${past}: ${errOf(r)}`);
+    });
+    await t("LTA-08", "นับรวมวันหยุด: ลาศุกร์–จันทร์ = 4 วัน (นับเฉพาะวันทำการได้ 2)", async () => {
+      expectStatus(await patch(U.admin, `${LT}/${ids.ruleType}`, { countMode: "calendar", maxDaysPerRequest: null, maxBackdateDays: null }), 200);
+      const fri = "2027-01-22";
+      const r = await submitT({ date_start: fri, date_end: isoAdd(fri, 3) }, pdf());
+      expect(r.status === 201 && r.json.total_day === 4, errOf(r));
+    });
+    await t("LTA-09", "ผอ.สร้างแทน: ไม่ติดกฎล่วงหน้า/เอกสาร แต่ยังห้ามครึ่งวัน", async () => {
+      expectStatus(await patch(U.admin, `${LT}/${ids.ruleType}`, { minNoticeDays: 30, docRequiredAfterDays: 0 }), 200);
+      const soon = weekday(isoAdd(todayTH, 2));
+      const ok = await post(U.dir, "/api/director/create-leave", { user_id: U.tb.id, leave_type_id: ids.ruleType, date_start: soon, date_end: soon });
+      expect(ok.status === 201, `${soon}: ${errOf(ok)}`);
+      const half = await post(U.dir, "/api/director/create-leave", { user_id: U.tb.id, leave_type_id: ids.ruleType, date_start: "2027-02-01", date_end: "2027-02-01", date_start_type: "ครึ่งบ่าย" });
+      expect(half.status === 422 && half.json.error === "HALF_DAY_NOT_ALLOWED", errOf(half));
+    });
+    await t("LTA-10", "ปิดใช้งาน → หายจากฟอร์มยื่นลา, ยื่นไม่ได้, แต่ยังเห็นในตัวกรอง (?all=1) และในวันลาคงเหลือของคนที่เคยใช้", async () => {
+      expectStatus(await patch(U.admin, `${LT}/${ids.ruleType}`, { isActive: false }), 200);
+      expect(!(await get(U.ta, "/api/leave-types")).json.items.some((x) => x.leave_type_id === ids.ruleType), "ยังอยู่ในฟอร์มยื่นลา");
+      expect((await get(U.ta, "/api/leave-types?all=1")).json.items.some((x) => x.leave_type_id === ids.ruleType), "หายจากตัวกรอง");
+      const r = await submitT({ date_start: "2027-02-08", date_end: "2027-02-08" }, pdf());
+      expect(r.status === 422 && r.json.error === "LEAVETYPE_INACTIVE", errOf(r));
+      const q = await get(U.ta, "/api/user/leave-quota?year=2027");
+      expect(q.json.items.some((x) => x.leave_type_id === ids.ruleType), "ไม่แสดงในวันลาคงเหลือทั้งที่เคยใช้แล้ว");
+    });
+    await t("LTA-11", "ลบประเภทที่มีใบลาแล้ว → 409 (ให้ปิดใช้งานแทน)", async () => {
+      const r = await del(U.admin, `${LT}/${ids.ruleType}`);
+      expect(r.status === 409 && /ปิดใช้งาน/.test(r.json.detail), errOf(r));
+    });
+    await t("LTA-12", "เรียงลำดับใหม่ (ย้ายไปบนสุด) แล้วย้อนกลับจากประวัติ → ลำดับเดิม", async () => {
+      const before = (await get(U.admin, LT)).json.items.map((x) => x.leave_type_id);
+      const moved = [ids.ruleType, ...before.filter((x) => x !== ids.ruleType)];
+      expectStatus(await put(U.admin, `${LT}/order`, { ids: moved }), 200);
+      expect((await get(U.admin, LT)).json.items[0].leave_type_id === ids.ruleType, "ไม่ขึ้นบนสุด");
+      expectStatus(await put(U.admin, `${LT}/order`, { ids: [1, 2] }), 422);
+      const h = (await get(U.admin, "/api/admin/settings/history?pageSize=1")).json.data[0];
+      expect(h.label === "เรียงลำดับประเภทการลา", h.label);
+      expectStatus(await post(U.admin, `/api/admin/settings/history/${h.id}/revert`), 200);
+      const after = (await get(U.admin, LT)).json.items.map((x) => x.leave_type_id);
+      expect(JSON.stringify(after) === JSON.stringify(before), `${before} → ${after}`);
+    });
+    await t("LTA-13", "ประเภทที่ยังไม่มีใบลา: ลบได้ → ย้อนกลับ (สร้างคืนด้วยรหัสเดิม) → ลบอีกครั้ง", async () => {
+      const c = await post(U.admin, LT, { leave_type_name: `${TYPE_NAME} ลบได้`, max_leave_day: 3 });
+      expectStatus(c, 201);
+      const id = c.json.item.leave_type_id;
+      expectStatus(await del(U.admin, `${LT}/${id}`), 200);
+      const h = (await get(U.admin, "/api/admin/settings/history?pageSize=1")).json.data[0];
+      expectStatus(await post(U.admin, `/api/admin/settings/history/${h.id}/revert`), 200);
+      const back = (await get(U.admin, LT)).json.items.find((x) => x.leave_type_id === id);
+      expect(back && back.max_leave_day === 3, "สร้างคืนไม่สำเร็จ");
+      expectStatus(await del(U.admin, `${LT}/${id}`), 200);
+    });
+    await t("LTA-14", "ย้อนกลับการแก้ไขจากประวัติ → กฎกลับเป็นค่าก่อนแก้", async () => {
+      expectStatus(await patch(U.admin, `${LT}/${ids.ruleType}`, { isActive: true, maxDaysPerRequest: 9 }), 200);
+      const h = (await get(U.admin, "/api/admin/settings/history?pageSize=1")).json.data[0];
+      expectStatus(await post(U.admin, `/api/admin/settings/history/${h.id}/revert`), 200);
+      const cur = (await get(U.admin, LT)).json.items.find((x) => x.leave_type_id === ids.ruleType);
+      expect(cur.rule.maxDaysPerRequest === null && cur.rule.isActive === false, JSON.stringify(cur.rule));
+    });
+    await t("LTA-15", "กฎเดิมของลาป่วย (เกิน 3 วันต้องแนบเอกสาร) บังคับที่ระบบหลังบ้านแล้ว", async () => {
+      const r = await submit(U.ta, { leave_type_id: 1, reason: `${TEST_PREFIX}ป่วยนาน`, date_start: "2027-03-01", date_end: "2027-03-04" });
+      expect(r.status === 422 && r.json.error === "DOCUMENT_REQUIRED", errOf(r));
+    });
+  }
+
+  /* -------------------------------------------------------------- 21. คาบเรียน + ไฟล์แนบ */
+  section("21. ตั้งค่าคาบเรียนและไฟล์แนบ");
+  {
+    settingsSnapshot ??= await snapshotSettings();
+    const cur = (await get(U.admin, "/api/admin/settings")).json.settings;
+    const SCH = `/api/admin/schedule/table/${U.ta.id}`;
+    await t("PER-01", "ลดเหลือ 5 คาบ (ไม่ปรับตารางเดิม) → ค่าสาธารณะเปลี่ยน + เพิ่มตารางสอนคาบ 6 ไม่ได้ (422) + แจ้งจำนวนแถวที่เกิน", async () => {
+      const r = await put(U.admin, "/api/admin/settings/periods", { periods: cur.periods.periods.slice(0, 5), syncSchedule: false });
+      expectStatus(r, 200);
+      expect(r.json.value.periods.length === 5 && r.json.updatedRows === 0 && typeof r.json.rowsBeyond === "number", show(r));
+      const pub = (await call(null, "GET", "/api/settings/public")).json;
+      expect(pub.periods.periods.length === 5, "ค่าสาธารณะยังเป็นจำนวนคาบเดิม");
+      const bad = await post(U.admin, SCH, { day_of_week: 5, period_number: 6, subject_id: ids.subject, classroom_id: ids.classroom });
+      expect(bad.status === 422 && /ไม่มีคาบที่ 6/.test(bad.json.detail), show(bad));
+      return `ตารางเดิมที่เกิน 5 คาบ: ${r.json.rowsBeyond} แถว`;
+    });
+    await t("PER-02", "ช่วงบ่ายเริ่ม 10:30 → คาบ 4 (10:40) นับเป็นบ่าย; คืนค่าเดิม", async () => {
+      expectStatus(await put(U.admin, "/api/admin/settings/periods", { afternoonStartsAt: "10:30" }), 200);
+      expect((await get(U.admin, "/api/admin/settings")).json.settings.periods.afternoonStartsAt === "10:30", "ไม่บันทึก");
+      expectStatus(await put(U.admin, "/api/admin/settings/periods", { ...cur.periods, syncSchedule: false }), 200);
+      expect(JSON.stringify((await get(U.admin, "/api/admin/settings")).json.settings.periods) === JSON.stringify(cur.periods), "คืนค่าเดิมไม่สำเร็จ");
+    });
+    const sendFiles = (files) =>
+      submit(U.ta, { leave_type_id: 2, reason: `${TEST_PREFIX}ไฟล์แนบ`, date_start: "2027-04-05", date_end: "2027-04-05", date_start_type: "เต็มวัน", date_end_type: "เต็มวัน" }, files);
+    const png = () => [new Blob([new Uint8Array(10)], { type: "image/png" }), "a.png"];
+    await t("ATT-01", "ตั้ง 1 ไฟล์ เฉพาะ PDF → 2 ไฟล์ = 422 TOO_MANY_FILES, PNG = 422 FILE_TYPE_NOT_ALLOWED (ข้อความตามค่าใหม่, ไม่มีใบลาค้าง)", async () => {
+      const r = await put(U.admin, "/api/admin/settings/attachments", { maxFiles: 1, kinds: ["pdf"], maxFileMB: 2 });
+      expectStatus(r, 200);
+      expect(r.json.bucketUpdated === true, "ปรับขีดจำกัดของที่เก็บไฟล์ไม่สำเร็จ");
+      const pub = (await call(null, "GET", "/api/settings/public")).json;
+      expect(pub.attachments.maxFiles === 1 && pub.attachments.kinds.join() === "pdf", JSON.stringify(pub.attachments));
+      const two = await sendFiles([[pdfBlob(), "a.pdf"], [pdfBlob(), "b.pdf"]]);
+      expect(two.status === 422 && two.json.error === "TOO_MANY_FILES" && two.json.detail.message === "แนบไฟล์ได้ไม่เกิน 1 ไฟล์", show(two));
+      const img = await sendFiles([png()]);
+      expect(img.status === 422 && img.json.error === "FILE_TYPE_NOT_ALLOWED" && /ไม่ใช่ PDF/.test(img.json.detail.message), show(img));
+      const { count } = await admin.from("leaverequest").select("leave_request_id", { count: "exact", head: true }).eq("user_id", U.ta.id).eq("date_start", "2027-04-05");
+      expect(count === 0, `มีใบลาค้าง ${count} ใบ`);
+    });
+    await t("ATT-02", "ย้อนกลับจากประวัติ → ค่าไฟล์แนบเดิม และ PNG แนบได้อีกครั้ง", async () => {
+      const h = (await get(U.admin, "/api/admin/settings/history?pageSize=1")).json.data[0];
+      expect(h.section === "attachments", h.label);
+      expectStatus(await post(U.admin, `/api/admin/settings/history/${h.id}/revert`), 200);
+      const now = (await get(U.admin, "/api/admin/settings")).json.settings.attachments;
+      expect(JSON.stringify(now) === JSON.stringify(cur.attachments), JSON.stringify(now));
+      if (cur.attachments.kinds.includes("png")) {
+        const ok = await sendFiles([png()]);
+        expectStatus(ok, 201);
+        ids.attLeave = ok.json.id;
+      }
+    });
+  }
+
   section("15. ลบผู้ใช้ (admin)");
   await t("UD-01", "ลบผู้ใช้ที่มีประวัติลา (teacherA) → 409 HAS_HISTORY", async () => expectStatus(await del(U.admin, "/api/admin/usermanagement/delete-user", { user_id: U.ta.id }), 409));
   await t("UD-02", "ลบผู้ใช้ที่เคยสอนแทน (tmp) → 409", async () => {
@@ -1592,6 +1950,10 @@ try {
   console.error("FATAL", e);
 } finally {
   section("ล้างข้อมูลทดสอบ");
+  if (settingsSnapshot) {
+    const restored = await restoreSettings(settingsSnapshot).catch((e) => [`restore ERROR ${e.message}`]);
+    console.log(restored.map((l) => `  ตั้งค่า: ${l}`).join("\n"));
+  }
   const log = await cleanup().catch((e) => [`cleanup ERROR ${e.message}`]);
   console.log(log.map((l) => "  " + l).join("\n"));
 

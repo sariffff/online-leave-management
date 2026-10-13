@@ -10,7 +10,6 @@ export default function AcademicSidebar() {
     <AppSidebar
       title="ฝ่ายวิชาการ"
       subtitle="จัดการลา / สอนแทน"
-      gradient="from-indigo-600 to-blue-600"
       pendingLabel="รอจัดสอนแทน"
       pendingCount={counts.cover}
       menus={[

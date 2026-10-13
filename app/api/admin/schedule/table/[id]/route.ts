@@ -3,6 +3,14 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { teacherIdOfUser } from "@/lib/services/schedule";
 import { toPosInt, UUID_RE } from "@/lib/validate";
 import { ROLE } from "@/lib/roles";
+import { getSettings } from "@/lib/settings";
+
+/** คาบต้องมีอยู่ในการตั้งค่าคาบเรียน */
+async function assertConfiguredPeriods(slots: { period_number: number }[]) {
+  const count = (await getSettings()).periods.periods.length;
+  const bad = slots.find((s) => s.period_number > count);
+  if (bad) throw new HttpError(422, "VALIDATION", `ไม่มีคาบที่ ${bad.period_number} (ตั้งค่าไว้ ${count} คาบ)`);
+}
 
 export const runtime = "nodejs";
 
@@ -115,6 +123,7 @@ export const POST = route<P>([ROLE.admin], async ({ req, params }) => {
   if (rawRows.length > 100) throw new HttpError(413, "TOO_MANY_ROWS");
 
   const slots = rawRows.map(parseSlot);
+  await assertConfiguredPeriods(slots);
 
   const existing = await supabaseAdmin.from("teachingschedule").select("day_of_week, period_number").eq("teacher_id", teacherId);
   if (existing.error) throw mapDbError(existing.error);
@@ -139,6 +148,7 @@ export const PATCH = route<P>([ROLE.admin], async ({ req, url, params }) => {
   const tsId = toPosInt(url.searchParams.get("teaching_schedule_id"));
   if (!tsId) throw new HttpError(400, "INVALID_ID");
   const slot = parseSlot(await readJson<Record<string, unknown>>(req), 0);
+  await assertConfiguredPeriods([slot]);
 
   const clash = await supabaseAdmin
     .from("teachingschedule")

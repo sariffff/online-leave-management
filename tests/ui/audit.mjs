@@ -15,6 +15,8 @@ const env = Object.fromEntries(
     .map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1).trim().replace(/^["']|["']$/g, "")])
 );
 const BASE = process.env.BASE || "http://localhost:3100";
+// ตรวจเฉพาะหน้าที่มีข้อความนี้ใน path เช่น AUDIT_ONLY=settings (ไม่ใส่ = ทุกหน้า; ใน Git Bash อย่าใส่ / นำหน้า)
+const ONLY = process.env.AUDIT_ONLY || "";
 const RUN = Date.now().toString(36);
 const PW = `Ui-${RUN}-Pw!`;
 const PREFIX = "__test__";
@@ -24,7 +26,7 @@ const ROLE_ID = { admin: 1, user: 2, supervisor: 3, director: 4, academic: 5 };
 
 const VIEWPORTS = { desktop: { width: 1366, height: 800 }, tablet: { width: 768, height: 1024 }, mobile: { width: 390, height: 844 } };
 const PAGES = {
-  admin: ["/user-management", "/classroom-management", "/holiday-management", "/level-management", "/schedule-management", "/semester-management", "/subjectgroup-management", "/subject-management", "/year-management"],
+  admin: ["/settings", "/settings?tab=leaveTypes", "/settings?tab=periods", "/settings?tab=attachments", "/settings?tab=history", "/user-management", "/classroom-management", "/holiday-management", "/level-management", "/schedule-management", "/semester-management", "/subjectgroup-management", "/subject-management", "/year-management"],
   user: ["/leave-page", "/leave-history", "/leave-overview", "/dashbord-user"],
   supervisor: ["/reviewed-page", "/reviewed-history"],
   director: ["/leave-approve", "/approved-history", "/dashboard"],
@@ -145,7 +147,7 @@ async function visit(ctx, role, url, vpName, extra = {}) {
   page.on("response", (r) => {
     if (r.url().includes("/api/") && r.status() >= 400) errors.push(`API ${r.status()} ${new URL(r.url()).pathname}`);
   });
-  const name = `${role}${url.replace(/\//g, "_")}-${vpName}`;
+  const name = `${role}${url.replace(/[/?=]/g, "_")}-${vpName}`;
   let status = 0;
   try {
     const res = await page.goto(BASE + url, { waitUntil: "networkidle", timeout: 30000 });
@@ -197,20 +199,20 @@ try {
   for (const [vpName, vp] of Object.entries(VIEWPORTS)) {
     // หน้าที่ไม่ต้องล็อกอิน
     const anon = await browser.newContext({ viewport: vp, locale: "th-TH" });
-    await visit(anon, "public", "/login", vpName);
+    if (!ONLY || "/login".includes(ONLY)) await visit(anon, "public", "/login", vpName);
     await anon.close();
     // ผู้ใช้หลายบทบาท: หน้าเลือกบทบาท
     const multi = await browser.newContext({ viewport: vp, locale: "th-TH" });
     await multi.addCookies((await cookieOf(U.multi)).map((c) => ({ ...c, domain: host, path: "/" })));
-    await visit(multi, "multi", "/select-role", vpName);
+    if (!ONLY || "/select-role".includes(ONLY)) await visit(multi, "multi", "/select-role", vpName);
     await multi.close();
 
     for (const [role, u] of Object.entries(users)) {
       const ctx = await browser.newContext({ viewport: vp, locale: "th-TH" });
       const cookies = await cookieOf(u);
       await ctx.addCookies([...cookies, { name: "active_role", value: String(ROLE_ID[role]) }].map((c) => ({ ...c, domain: host, path: "/" })));
-      for (const p of PAGES[role]) await visit(ctx, role, p, vpName, { openModal: true, openMenu: vpName === "mobile" && p === PAGES[role][0] });
-      if (role === "user") await visit(ctx, role, "/", vpName);
+      for (const p of PAGES[role].filter((x) => !ONLY || x.includes(ONLY))) await visit(ctx, role, p, vpName, { openModal: true, openMenu: vpName === "mobile" && p === PAGES[role][0] });
+      if (role === "user" && !ONLY) await visit(ctx, role, "/", vpName);
       await ctx.close();
     }
     console.log(`ตรวจขนาด ${vpName} เสร็จ`);

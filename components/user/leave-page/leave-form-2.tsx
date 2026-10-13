@@ -9,11 +9,12 @@ import { countLeaveDays, isNonWorkingISO } from "@/lib/leave/days";
 import { HALF_OPTIONS, type HalfType } from "@/lib/leave/status";
 import { getFiscalYearFromISO } from "@/utils/year";
 import { thaiDate } from "@/lib/format";
+import { checkLeaveRules, describeRule } from "@/lib/leave/rules";
+import { usePublicSettings } from "@/components/shell/SettingsContext";
+import { acceptOf, checkAttachment, describeAttachments } from "@/lib/settings-schema";
 
 type QuotaItem = { unlimited: boolean; total: number | null; used: number; reserved: number; available: number | null };
 
-const MAX_FILE = 5 * 1024 * 1024;
-const MIME = ["application/pdf", "image/jpeg", "image/png"];
 const todayISO = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -33,8 +34,8 @@ export default function Step2LeaveForm({
   const [form, setForm] = useState({
     startDate: initial?.startDate ?? "",
     endDate: initial?.endDate ?? "",
-    startType: (initial?.startType ?? "เต็มวัน") as HalfType,
-    endType: (initial?.endType ?? "เต็มวัน") as HalfType,
+    startType: (selectedLeaveType.rule.allowHalfDay ? initial?.startType ?? "เต็มวัน" : "เต็มวัน") as HalfType,
+    endType: (selectedLeaveType.rule.allowHalfDay ? initial?.endType ?? "เต็มวัน" : "เต็มวัน") as HalfType,
     reason: initial?.reason ?? "",
     attachments: initial?.attachments ?? ([] as File[]),
   });
@@ -45,6 +46,8 @@ export default function Step2LeaveForm({
   const [loadingQuota, setLoadingQuota] = useState(true);
 
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
+  const rule = selectedLeaveType.rule;
+  const attach = usePublicSettings().attachments;
 
   // วันหยุดของปีที่เกี่ยวข้อง (ปีปัจจุบัน + ปีของวันที่เลือก)
   const years = useMemo(
@@ -71,14 +74,17 @@ export default function Step2LeaveForm({
   }, [selectedLeaveType.leave_type_id, fiscalYear]);
 
   const { total: totalDays, excluded } = useMemo(
-    () => countLeaveDays({ start: form.startDate, end: form.endDate, startType: form.startType, endType: form.endType, holidays }),
-    [form.startDate, form.endDate, form.startType, form.endType, holidays]
+    () => countLeaveDays({ start: form.startDate, end: form.endDate, startType: form.startType, endType: form.endType, holidays, mode: rule.countMode }),
+    [form.startDate, form.endDate, form.startType, form.endType, holidays, rule.countMode]
   );
 
   // โหลดสิทธิ์ไม่สำเร็จ → ไม่บล็อกการยื่น (server ตรวจสิทธิ์อีกครั้งตอนบันทึก)
   const available = !quota || quota.unlimited ? null : quota.available ?? 0;
   const overQuota = available !== null && totalDays > available;
-  const needsCert = selectedLeaveType.leave_type_id === 1 && totalDays > 3 && form.attachments.length === 0;
+  // กฎของประเภทการลาที่ผู้ดูแลตั้งไว้ (ระบบหลังบ้านตรวจซ้ำตอนส่ง)
+  const docAfter = rule.docRequiredAfterDays;
+  const needsCert = docAfter !== null && totalDays > docAfter && form.attachments.length === 0;
+  const ruleLines = useMemo(() => describeRule(rule), [rule]);
 
   function pickDate(field: "startDate" | "endDate", raw: string, el: HTMLInputElement) {
     el.setCustomValidity("");
@@ -102,11 +108,13 @@ export default function Step2LeaveForm({
     const problems: string[] = [];
     const ok: File[] = [];
     for (const f of Array.from(list)) {
-      if (f.size > MAX_FILE) problems.push(`${f.name} ใหญ่เกิน 5MB`);
-      else if (!MIME.includes(f.type)) problems.push(`${f.name} ไม่ใช่ PDF/JPG/PNG`);
+      const bad = checkAttachment(attach, f);
+      if (bad) problems.push(bad.message);
       else ok.push(f);
     }
-    const merged = [...form.attachments, ...ok].slice(0, 5);
+    const merged = [...form.attachments, ...ok];
+    if (merged.length > attach.maxFiles) problems.push(`แนบไฟล์ได้ไม่เกิน ${attach.maxFiles} ไฟล์`);
+    merged.length = Math.min(merged.length, attach.maxFiles);
     set({ attachments: merged });
     setErrors((e) => ({ ...e, attachments: problems.join(" • ") }));
   }
@@ -119,7 +127,21 @@ export default function Step2LeaveForm({
     if (form.startDate && form.endDate && totalDays <= 0) e.totalDays = "ช่วงวันที่เลือกไม่มีวันทำการ";
     if (loadingQuota) e.totalDays = "กำลังโหลดสิทธิ์คงเหลือ...";
     else if (overQuota) e.totalDays = "จำนวนวันลาเกินสิทธิ์ที่เหลือ";
-    if (needsCert) e.attachments = "การลาป่วยเกิน 3 วันต้องแนบใบรับรองแพทย์";
+    if (form.startDate && form.endDate) {
+      const v = checkLeaveRules(rule, {
+        start: form.startDate,
+        end: form.endDate,
+        startType: form.startType,
+        endType: form.endType,
+        totalDays,
+        fileCount: form.attachments.length,
+        today: todayISO(),
+      });
+      const doc = v.find((x) => x.code === "DOCUMENT_REQUIRED");
+      if (doc) e.attachments = doc.message;
+      const other = v.find((x) => x.code !== "DOCUMENT_REQUIRED");
+      if (other && !e.totalDays) e.totalDays = other.message;
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -154,6 +176,17 @@ export default function Step2LeaveForm({
         </div>
       </div>
 
+      {ruleLines.length > 0 && (
+        <div className="p-3 mb-6 text-sm border border-blue-200 rounded-lg bg-blue-50 text-blue-900">
+          <div className="flex items-center mb-1 font-medium">
+            <Info className="w-4 h-4 mr-2" /> เงื่อนไขของ{selectedLeaveType.leave_type_name}
+          </div>
+          <ul className="space-y-0.5 list-disc list-inside">
+            {ruleLines.map((l) => <li key={l}>{l}</li>)}
+          </ul>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:gap-8">
         <div className="p-4 space-y-4 rounded-lg sm:p-6 bg-gray-50">
           <h4 className="flex items-center font-semibold text-gray-900">
@@ -165,7 +198,7 @@ export default function Step2LeaveForm({
             <label className="block mb-2 text-sm font-medium text-gray-700">วันที่เริ่มลา <span className="text-red-500">*</span></label>
             <div className="flex gap-2 sm:gap-3">
               <input type="date" aria-label="วันที่เริ่มลา" value={form.startDate} onChange={(e) => pickDate("startDate", e.target.value, e.currentTarget)} className={inputCls(errors.startDate)} />
-              <select value={form.startType} onChange={(e) => set({ startType: e.target.value as HalfType })} disabled={!form.startDate} aria-label="ช่วงเวลาวันเริ่ม" className="w-28 px-2 py-2 bg-white border border-gray-300 rounded-lg shrink-0 sm:w-32">
+              <select value={form.startType} onChange={(e) => set({ startType: e.target.value as HalfType })} disabled={!form.startDate || !rule.allowHalfDay} aria-label="ช่วงเวลาวันเริ่ม" className="w-28 px-2 py-2 bg-white border border-gray-300 rounded-lg shrink-0 sm:w-32">
                 {HALF_OPTIONS.map((o) => <option key={o}>{o}</option>)}
               </select>
             </div>
@@ -176,7 +209,7 @@ export default function Step2LeaveForm({
             <label className="block mb-2 text-sm font-medium text-gray-700">วันที่สิ้นสุดการลา <span className="text-red-500">*</span></label>
             <div className="flex gap-2 sm:gap-3">
               <input type="date" aria-label="วันที่สิ้นสุดการลา" min={form.startDate || undefined} value={form.endDate} onChange={(e) => pickDate("endDate", e.target.value, e.currentTarget)} className={inputCls(errors.endDate)} />
-              <select value={form.endType} onChange={(e) => set({ endType: e.target.value as HalfType })} disabled={sameDay || !form.endDate} aria-label="ช่วงเวลาวันสิ้นสุด" className="w-28 px-2 py-2 bg-white border border-gray-300 rounded-lg shrink-0 sm:w-32">
+              <select value={form.endType} onChange={(e) => set({ endType: e.target.value as HalfType })} disabled={sameDay || !form.endDate || !rule.allowHalfDay} aria-label="ช่วงเวลาวันสิ้นสุด" className="w-28 px-2 py-2 bg-white border border-gray-300 rounded-lg shrink-0 sm:w-32">
                 {HALF_OPTIONS.map((o) => <option key={o}>{o}</option>)}
               </select>
             </div>
@@ -246,13 +279,13 @@ export default function Step2LeaveForm({
                 ลากไฟล์มาวาง หรือ
                 <label className="ml-1 text-blue-600 cursor-pointer hover:text-blue-700">
                   เลือกไฟล์
-                  <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => {
+                  <input type="file" multiple accept={acceptOf(attach)} onChange={(e) => {
                     addFiles(e.target.files);
                     e.target.value = "";
                   }} className="hidden" />
                 </label>
               </p>
-              <p className="text-xs text-gray-500">PDF, JPG, PNG (สูงสุด 5MB ต่อไฟล์, ไม่เกิน 5 ไฟล์)</p>
+              <p className="text-xs text-gray-500">{describeAttachments(attach)}</p>
             </div>
             {errors.attachments && <p className="mt-1 text-sm text-red-600">{errors.attachments}</p>}
 

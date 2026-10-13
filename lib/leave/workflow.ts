@@ -4,10 +4,13 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { HttpError, conflict, notFound } from "@/lib/http";
-import { assertQuotaAvailable, computeQuota, getLeaveType, syncQuotaSnapshot } from "@/lib/leave/quota";
+import { assertQuotaAvailable, computeQuota, syncQuotaSnapshot } from "@/lib/leave/quota";
+import { getLeaveTypeFull } from "@/lib/leave/types";
+import { checkLeaveRules, todayInThailand, type RuleOptions } from "@/lib/leave/rules";
+import type { LeaveTypeRule } from "@/lib/settings-schema";
 import { countLeaveDays, partOfDay } from "@/lib/leave/days";
 import { OWNER_EDITABLE, normalizeHalf } from "@/lib/leave/status";
-import { removeFiles, parseFileField, serializeFileField, toStorageKey, uploadFiles } from "@/lib/leave/files";
+import { assertUploads, removeFiles, parseFileField, serializeFileField, toStorageKey, uploadFiles } from "@/lib/leave/files";
 import { getHolidayMap } from "@/lib/services/holidays";
 import { getFiscalYearFromISO, isSameFiscalYear } from "@/utils/year";
 import { isISODate } from "@/lib/validate";
@@ -33,7 +36,7 @@ function assertDates(i: DateInput) {
  * จำนวนวันที่ server คำนวณเอง — ไม่เชื่อค่าจาก client แม้ดึงวันหยุดราชการไม่สำเร็จ
  * (ฟอร์มก็ได้วันหยุดจาก API เดียวกัน จึงไม่มีข้อมูลดีกว่า server และเคยถูกใช้ส่ง 0.5 วันแทน 2 วัน)
  */
-async function resolveTotalDays(i: DateInput): Promise<number> {
+async function resolveTotalDays(i: DateInput, mode: LeaveTypeRule["countMode"] = "working"): Promise<number> {
   const { map, degraded } = await getHolidayMap(i.date_start, i.date_end);
   if (degraded) console.warn("[leave] holiday source degraded — counting without public holidays", i.date_start, i.date_end);
   const calc = countLeaveDays({
@@ -42,9 +45,20 @@ async function resolveTotalDays(i: DateInput): Promise<number> {
     startType: i.date_start_type,
     endType: i.date_end_type,
     holidays: map,
+    mode,
   });
   if (calc.total <= 0) throw new HttpError(422, "NO_WORKING_DAYS");
   return calc.total;
+}
+
+/** กฎของประเภทการลาที่ผู้ดูแลตั้งไว้ (ครั้งละไม่เกิน, แนบเอกสาร, ล่วงหน้า/ย้อนหลัง, ครึ่งวัน, ปิดใช้งาน) */
+function enforceRules(rule: LeaveTypeRule, i: DateInput, totalDays: number, fileCount: number, opts?: RuleOptions) {
+  const v = checkLeaveRules(
+    rule,
+    { start: i.date_start, end: i.date_end, startType: i.date_start_type, endType: i.date_end_type, totalDays, fileCount, today: todayInThailand() },
+    opts
+  );
+  if (v.length) throw new HttpError(422, v[0].code, { message: v[0].message, ...v[0].detail });
 }
 
 /** สถานะที่ถือว่า "ยังลาอยู่" — ใช้ตรวจวันลาทับกัน */
@@ -114,10 +128,12 @@ export type SubmitInput = DateInput & {
 export async function submitLeave(userId: string, input: SubmitInput) {
   assertDates(input);
   if (!input.reason) throw new HttpError(422, "MISSING_REASON");
-  await getLeaveType(input.leave_type_id);
+  const { rule } = await getLeaveTypeFull(input.leave_type_id);
 
   const fiscalYear = getFiscalYearFromISO(input.date_start);
-  const totalDay = await resolveTotalDays(input);
+  const totalDay = await resolveTotalDays(input, rule.countMode);
+  enforceRules(rule, input, totalDay, input.files.length);
+  await assertUploads(input.files);
   await assertNoOverlap(userId, input);
   await assertQuotaAvailable({ userId, leaveTypeId: input.leave_type_id, fiscalYear, days: totalDay });
 
@@ -194,8 +210,13 @@ export async function updateOwnLeave(userId: string, id: number, input: UpdateOw
     normalizeHalf(next.date_start_type) !== normalizeHalf(cur.date_start_type) ||
     normalizeHalf(next.date_end_type) !== normalizeHalf(cur.date_end_type);
 
-  const totalDay = datesChanged ? await resolveTotalDays(next) : Number(cur.total_day);
+  const { rule } = await getLeaveTypeFull(cur.leave_type_id);
+  const totalDay = datesChanged ? await resolveTotalDays(next, rule.countMode) : Number(cur.total_day);
   const fiscalYear = getFiscalYearFromISO(next.date_start);
+  // แก้โดยไม่เปลี่ยนวัน (เช่น แนบเอกสารเพิ่มให้ใบที่ถูกตีกลับ) ไม่ตรวจเรื่องยื่นล่วงหน้า/ย้อนหลัง
+  const fileCount = input.files && input.files.length > 0 ? input.files.length : parseFileField(cur.file).length;
+  enforceRules(rule, next, totalDay, fileCount, { timing: datesChanged });
+  if (input.files) await assertUploads(input.files);
   if (datesChanged) await assertNoOverlap(userId, next, id);
 
   await assertQuotaAvailable({
@@ -311,7 +332,7 @@ export type DirectorCreateInput = DateInput & {
 /** ผอ.สร้างใบลาแทนบุคลากร → อนุมัติทันที */
 export async function directorCreateLeave(directorId: string, input: DirectorCreateInput) {
   assertDates(input);
-  await getLeaveType(input.leave_type_id);
+  const { rule } = await getLeaveTypeFull(input.leave_type_id);
 
   const { data: target, error: tErr } = await supabaseAdmin
     .from("users")
@@ -323,7 +344,9 @@ export async function directorCreateLeave(directorId: string, input: DirectorCre
   if (target.is_active === false) throw new HttpError(400, "USER_INACTIVE");
 
   const fiscalYear = getFiscalYearFromISO(input.date_start);
-  const totalDay = await resolveTotalDays(input);
+  const totalDay = await resolveTotalDays(input, rule.countMode);
+  // ผอ.สร้างแทน: ไม่ตรวจเวลายื่น/เอกสาร (ผอ.พิจารณาเอง) แต่ยังตรวจครั้งละไม่เกิน/ครึ่งวัน/ปิดใช้งาน
+  enforceRules(rule, input, totalDay, 0, { timing: false, documents: false });
   await assertNoOverlap(input.user_id, input);
   await assertQuotaAvailable({ userId: input.user_id, leaveTypeId: input.leave_type_id, fiscalYear, days: totalDay });
 

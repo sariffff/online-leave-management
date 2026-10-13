@@ -8,15 +8,18 @@ import { statusLabel } from "@/lib/leave/status";
 import { thaiDate } from "@/lib/format";
 import { leaveCode, type LeaveItem } from "@/components/shared/types";
 import type { LeavePdfData } from "@/components/user/leave-history/LeavePdfDoc";
+import { usePublicSettings } from "@/components/shell/SettingsContext";
+import type { GeneralSettings } from "@/lib/settings-schema";
 
-const SCHOOL_DIRECTOR_TITLE = "ผู้อำนวยการโรงเรียนบ้านตาสา";
-
-function toPdfData(item: LeaveItem): LeavePdfData {
+// ชื่อโรงเรียน/ตำแหน่งผู้อนุมัติ/โลโก้ มาจากการตั้งค่าระบบ (หมวดทั่วไป)
+function toPdfData(item: LeaveItem, general: GeneralSettings): LeavePdfData {
   const approved = ["approved", "covered"].includes(item.status_code);
   return {
     code: leaveCode(item.id),
     printedAtText: `วันที่ ${thaiDate(new Date().toISOString().slice(0, 10))}`,
-    recipient: SCHOOL_DIRECTOR_TITLE,
+    recipient: general.approverTitle,
+    schoolName: general.schoolName,
+    logoUrl: general.logoUrl ?? undefined,
     applicantName: item.user.fullName,
     leaveTypeName: item.leaveType,
     reason: item.reason || "-",
@@ -26,7 +29,7 @@ function toPdfData(item: LeaveItem): LeavePdfData {
     attachmentCount: item.files.length,
     statusText: statusLabel(item.status_code),
     approverName: approved || item.status_code === "rejected" ? (item.approvedBy ?? undefined) : undefined,
-    approverTitle: SCHOOL_DIRECTOR_TITLE,
+    approverTitle: general.approverTitle,
     approvedDateText: item.approvedAt ? `วันที่ ${thaiDate(item.approvedAt.slice(0, 10))}` : undefined,
     comment: item.comment ?? undefined,
   };
@@ -35,12 +38,13 @@ function toPdfData(item: LeaveItem): LeavePdfData {
 /** สร้าง PDF ฝั่ง client — โหลด @react-pdf/renderer (~1MB) เฉพาะตอนกดปุ่ม ไม่รวมใน bundle ของหน้า */
 export default function GeneratePdfButton({ item, label = "สร้าง/เปิด PDF" }: { item: LeaveItem; label?: string }) {
   const [loading, setLoading] = useState(false);
+  const { general } = usePublicSettings();
 
   async function handleClick() {
     setLoading(true);
     try {
       const [{ pdf }, { default: LeavePdfDoc }] = await Promise.all([import("@react-pdf/renderer"), import("@/components/user/leave-history/LeavePdfDoc")]);
-      const blob = await pdf(<LeavePdfDoc data={toPdfData(item)} />).toBlob();
+      const blob = await pdf(<LeavePdfDoc data={toPdfData(item, general)} />).toBlob();
       const url = URL.createObjectURL(blob);
       const win = window.open(url, "_blank");
       if (!win) {

@@ -72,3 +72,6 @@ export type SubstituteRow = {
 };
 
 export type HolidayRow = { holiday_id: number; holiday_name: string | null; holiday_date: string | null };
+
+/** ประเภทการลา + กฎ/คำอธิบาย/สีจากการตั้งค่าระบบ (ผลของ /api/leave-types) */
+export type LeaveTypeWithRule = LeaveTypeRow & { rule: import("@/lib/settings-schema").LeaveTypeRule };

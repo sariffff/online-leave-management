@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import LeaveOverviewClient from "./LeaveOverviewClient";
 import { requireAuth } from "@/lib/guard";
 import { computeQuota } from "@/lib/leave/quota";
+import { quotaForDisplay } from "@/lib/leave/types";
 import { getFiscalYearFromISO } from "@/utils/year";
 import { perfPage } from "@/lib/perf";
 
@@ -14,7 +15,7 @@ export default function Page() {
     const year = getFiscalYearFromISO(new Date().toISOString().slice(0, 10));
     let items;
     try {
-      items = await computeQuota(g.user.id, year);
+      items = await quotaForDisplay(await computeQuota(g.user.id, year));
     } catch (e) {
       console.error("[leave-overview] initial load failed", e);
     }

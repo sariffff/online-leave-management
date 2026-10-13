@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useNav } from "@/components/shell/NavContext";
+import { usePublicSettings } from "@/components/shell/SettingsContext";
 import { apiFetch } from "@/lib/client/api";
 import { fullName } from "@/lib/format";
 
@@ -36,6 +37,7 @@ async function logout() {
 
 export default function HeaderComponent({ initialMe }: { initialMe: InitialMe }) {
   const { hasNav, open, setOpen } = useNav();
+  const { general } = usePublicSettings();
   const [me, setMe] = useState<Me | null>(initialMe);
   const [profileOpen, setProfileOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -96,7 +98,7 @@ export default function HeaderComponent({ initialMe }: { initialMe: InitialMe })
   );
 
   return (
-    <header className="z-30 flex items-center justify-between h-14 gap-2 px-3 text-white shrink-0 bg-blue-600 sm:px-4">
+    <header className="z-30 flex items-center justify-between h-14 gap-2 px-3 text-white shrink-0 bg-(--brand) sm:px-4">
       <div className="flex items-center min-w-0 gap-1">
         {hasNav && (
           <button
@@ -110,9 +112,13 @@ export default function HeaderComponent({ initialMe }: { initialMe: InitialMe })
             <Menu size={22} />
           </button>
         )}
-        <Link href="/" className="min-w-0 font-bold truncate">
-          <span className="hidden md:inline">ระบบการลาของบุคลากร โรงเรียนบ้านตาสา</span>
-          <span className="md:hidden">ระบบลาออนไลน์</span>
+        <Link href="/" className="flex items-center min-w-0 gap-2 font-bold">
+          {general.logoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={general.logoUrl} alt="" className="object-contain w-8 h-8 bg-white rounded-full shrink-0" />
+          )}
+          <span className="hidden truncate md:inline">{general.systemName}</span>
+          <span className="truncate md:hidden">{general.systemShortName}</span>
         </Link>
       </div>
 
@@ -124,7 +130,7 @@ export default function HeaderComponent({ initialMe }: { initialMe: InitialMe })
               className="flex items-center min-w-0 gap-2 py-1 pl-1 pr-2 rounded-full hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
               aria-label="เมนูผู้ใช้"
             >
-              <span className="flex items-center justify-center w-8 h-8 text-sm font-bold text-blue-700 bg-white rounded-full shrink-0">
+              <span className="flex items-center justify-center w-8 h-8 text-sm font-bold bg-white rounded-full shrink-0 text-(--brand)">
                 {initial}
               </span>
               <span className="hidden text-sm font-medium truncate sm:block max-w-48">{displayName}</span>

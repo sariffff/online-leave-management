@@ -41,6 +41,16 @@ describe("files", () => {
       "TOO_MANY_FILES"
     );
   });
+  it("FL-06 validateUploads ตามการตั้งค่า: 1 ไฟล์, 1MB, เฉพาะ WEBP/HEIC", () => {
+    const a = { maxFileMB: 1, maxFiles: 1, kinds: ["webp", "heic"] as ("webp" | "heic")[] };
+    expect(() => validateUploads([fakeFile("a.webp", "image/webp", 10)], a)).not.toThrow();
+    expect(() => validateUploads([fakeFile("IMG.HEIC", "", 10)], a)).not.toThrow(); // ไม่มี MIME → ดูจากนามสกุล
+    expect(() => validateUploads([fakeFile("a.pdf", "application/pdf", 10)], a)).toThrow("FILE_TYPE_NOT_ALLOWED");
+    expect(() => validateUploads([fakeFile("a.webp", "image/webp", 1024 * 1024 + 1)], a)).toThrow("FILE_TOO_LARGE");
+    expect(() => validateUploads([fakeFile("a.webp", "image/webp", 1), fakeFile("b.webp", "image/webp", 1)], a)).toThrow("TOO_MANY_FILES");
+    // ปลอมนามสกุล: MIME เป็น PDF แต่ชื่อ .webp → ยึด MIME
+    expect(() => validateUploads([fakeFile("x.webp", "application/pdf", 1)], a)).toThrow("FILE_TYPE_NOT_ALLOWED");
+  });
 });
 
 describe("schedule helpers", () => {

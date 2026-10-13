@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { apiFetch } from "@/lib/client/api";
-import { DAY_NAMES, PERIODS } from "@/lib/periods";
+import { DAY_NAMES } from "@/lib/periods";
+import { usePublicSettings } from "@/components/shell/SettingsContext";
 
 type Teacher = { teacher_id: number; user_id: string; name: string; subject_group_name: string | null };
 type Slot = {
@@ -29,6 +30,8 @@ const PAGE_SIZE = 10;
 const selectCls = "h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm";
 
 export default function ScheduleManagementPage() {
+  // คาบเรียนจากการตั้งค่าระบบ
+  const PERIODS = usePublicSettings().periods.periods;
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);

@@ -4,7 +4,9 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { HttpError } from "@/lib/http";
 import { fullName } from "@/lib/format";
 import { isISODate } from "@/lib/validate";
-import { leaveCoversPeriod, periodPart, type LeaveSpan } from "@/lib/leave/days";
+import { leaveCoversPeriod, type LeaveSpan } from "@/lib/leave/days";
+import { getSettings } from "@/lib/settings";
+import { periodPartOf } from "@/lib/settings-schema";
 import { getHolidayMap } from "@/lib/services/holidays";
 
 /** ใบลาที่ถือว่า "ไม่อยู่" — รวมใบที่รอพิจารณา เพื่อไม่ให้มอบหมายคนที่ขอลาไว้แล้ว */
@@ -58,7 +60,7 @@ export async function scheduleForRange(teacherId: number, leave: LeaveSpan): Pro
   const end = leave.date_end;
   const dates = eachDate(start, end);
   if (dates.length === 0) return [];
-  const { map: holidays } = await getHolidayMap(start, end);
+  const [{ map: holidays }, { periods: periodCfg }] = await Promise.all([getHolidayMap(start, end), getSettings()]);
 
   const dows = [...new Set(dates.map(teachingDow).filter((d): d is number => d !== null))];
 
@@ -120,7 +122,7 @@ export async function scheduleForRange(teacherId: number, leave: LeaveSpan): Pro
     const dow = teachingDow(date);
     const holiday = holidays.get(date) ?? null;
     const rowsOfDay = (dow && !holiday ? byDow.get(dow) ?? [] : []).filter((r) =>
-      leaveCoversPeriod(leave, date, periodPart(r.period_number ?? 0, r.start_time))
+      leaveCoversPeriod(leave, date, periodPartOf(periodCfg, r.period_number ?? 0, r.start_time))
     );
     const slots: ScheduleSlot[] = rowsOfDay.map((r) => {
       const sub = subs.get(`${date}|${r.teaching_schedule_id}`);
@@ -165,7 +167,7 @@ export async function freeTeachers(args: { date: string; period: number; exclude
 
   const nextDay = new Date(Date.parse(`${args.date}T00:00:00Z`) + DAY_MS).toISOString().slice(0, 10);
 
-  const part = periodPart(args.period);
+  const part = periodPartOf((await getSettings()).periods, args.period);
   const [teachersRes, busyRes, subsRes, leaveRes] = await Promise.all([
     supabaseAdmin.from("teacher").select("teacher_id, user_id, subject_group_id, user:user_id ( user_id, prename, name, surname, is_active )"),
     supabaseAdmin.from("teachingschedule").select("teacher_id").eq("day_of_week", String(dow)).eq("period_number", args.period),
@@ -251,7 +253,7 @@ export async function assignSubstitute(args: { teachingScheduleId: number; dateI
     .lte("date_start", args.dateISO)
     .gte("date_end", args.dateISO);
   if (ownerLeaves.error) throw new HttpError(500, "DB_ERROR", ownerLeaves.error.message);
-  const part = periodPart(row.period_number ?? 0, row.start_time);
+  const part = periodPartOf((await getSettings()).periods, row.period_number ?? 0, row.start_time);
   if (!((ownerLeaves.data ?? []) as LeaveSpan[]).some((l) => leaveCoversPeriod(l, args.dateISO, part))) {
     throw new HttpError(400, "NO_APPROVED_LEAVE");
   }

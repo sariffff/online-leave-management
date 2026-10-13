@@ -28,7 +28,9 @@ export async function apiFetch<T = unknown>(url: string, opts: Opts = {}): Promi
   if (!res.ok) {
     const code = (data && (data.error as string)) || `HTTP_${res.status}`;
     const detail = data?.detail;
-    throw new ApiError(res.status, ERROR_TH[code] ?? (typeof detail === "string" ? detail : code), detail);
+    // detail = { message } (เช่นกฎการลา "ลาได้ครั้งละไม่เกิน 3 วัน") ระบุละเอียดกว่าข้อความทั่วไปของรหัส
+    const ruleMsg = detail && typeof detail === "object" && typeof (detail as { message?: unknown }).message === "string" ? (detail as { message: string }).message : null;
+    throw new ApiError(res.status, ruleMsg ?? ERROR_TH[code] ?? (typeof detail === "string" ? detail : code), detail);
   }
   return data as T;
 }
@@ -50,9 +52,9 @@ export const ERROR_TH: Record<string, string> = {
   NOT_APPROVABLE: "ใบลานี้ไม่อยู่ในสถานะรออนุมัติ (อาจมีผู้อื่นดำเนินการไปแล้ว)",
   STATUS_CHANGED: "สถานะใบลาเปลี่ยนไปแล้ว กรุณารีเฟรชหน้า",
   REQUEST_NOT_FOUND: "ไม่พบใบลา",
-  FILE_TOO_LARGE: "ไฟล์ใหญ่เกิน 5MB",
-  FILE_TYPE_NOT_ALLOWED: "รองรับเฉพาะไฟล์ PDF, JPG, PNG",
-  TOO_MANY_FILES: "แนบไฟล์ได้ไม่เกิน 5 ไฟล์",
+  FILE_TOO_LARGE: "ไฟล์ใหญ่เกินขนาดที่กำหนด",
+  FILE_TYPE_NOT_ALLOWED: "ชนิดไฟล์นี้แนบไม่ได้",
+  TOO_MANY_FILES: "แนบไฟล์เกินจำนวนที่กำหนด",
   SUBSTITUTE_NOT_FREE: "ครูท่านนี้ไม่ว่างในคาบดังกล่าว",
   ALREADY_ASSIGNED: "คาบนี้มีผู้สอนแทนแล้ว",
   DATE_NOT_MATCH_SCHEDULE: "วันที่ไม่ตรงกับวันสอนของคาบนี้",

@@ -24,6 +24,11 @@ export async function listLeaveTypes(): Promise<LeaveTypeRow[]> {
   return rows;
 }
 
+/** ล้าง cache หลังผู้ดูแลแก้ประเภทการลา */
+export function invalidateLeaveTypes() {
+  typesCache = null;
+}
+
 export async function getLeaveType(id: number): Promise<LeaveTypeRow> {
   const t = (await listLeaveTypes()).find((x) => x.leave_type_id === id);
   if (!t) throw new HttpError(404, "LEAVETYPE_NOT_FOUND");
