@@ -26,7 +26,7 @@ const MENUS: MenuGroup[] = [
   { title: "จัดการวันหยุด", icon: CalendarX, href: "/holiday-management" },
   { title: "ตั้งค่าระบบ", icon: Settings, href: "/settings" },
   // ซ่อน "ปีการศึกษา" (ชั้นปีการศึกษา /year-management, ภาคเรียน /semester-management) ไว้ก่อน —
-  // ยังเป็นข้อมูลตัวอย่าง ไม่มีตารางในฐานข้อมูลรองรับ (UI_FIX_PLAN Q1) · หน้ายังอยู่ เปิดผ่าน URL ได้
+  // ยังเป็นข้อมูลตัวอย่าง ไม่มีตารางในฐานข้อมูลรองรับ · หน้ายังอยู่ เปิดผ่าน URL ได้
 ];
 
 export default function Sidebar() {

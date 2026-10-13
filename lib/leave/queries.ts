@@ -118,7 +118,7 @@ export function parseFilters(url: URL, defaults: { pageSize?: number; maxPageSiz
 }
 
 /** หา user_id ที่ชื่อ/นามสกุล/อีเมลตรงกับคำค้น (คืน null ถ้าไม่มีคำค้น) */
-export async function matchUserIds(q: string): Promise<string[] | null> {
+async function matchUserIds(q: string): Promise<string[] | null> {
   if (!q) return null;
   const like = `%${escapeLike(q)}%`;
   const [byName, authMap] = await Promise.all([
@@ -141,7 +141,7 @@ type Builder = {
 };
 
 /** ใส่เงื่อนไขกรองมาตรฐาน (วันที่อิง date_start) */
-export function applyFilters<T>(query: T, f: LeaveFilters, userIds: string[] | null): T {
+function applyFilters<T>(query: T, f: LeaveFilters, userIds: string[] | null): T {
   let q = query as unknown as Builder;
   if (f.fiscalYear) {
     const r = getFiscalRange(f.fiscalYear);

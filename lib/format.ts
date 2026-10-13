@@ -8,7 +8,7 @@ export function fullName(u: NameParts): string {
   return `${u.prename ?? ""}${u.name ?? ""} ${u.surname ?? ""}`.replace(/\s+/g, " ").trim();
 }
 
-export const TH_MONTHS_FULL = [
+const TH_MONTHS_FULL = [
   "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
   "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
 ] as const;

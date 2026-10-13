@@ -5,10 +5,9 @@ import { HttpError } from "@/lib/http";
 import { getSettings } from "@/lib/settings";
 import { DEFAULT_SETTINGS, FILE_KINDS, checkAttachment, fileKindOf, type AttachmentSettings } from "@/lib/settings-schema";
 
-export const BUCKET = "leave-attachments";
-export const SIGN_TTL = 60 * 5;
+const BUCKET = "leave-attachments";
+const SIGN_TTL = 60 * 5;
 // ขนาด/จำนวน/ชนิดไฟล์ ตั้งค่าได้ในหน้า "ตั้งค่าระบบ → ไฟล์แนบ" (ค่าเริ่มต้น 5MB, 5 ไฟล์, PDF/JPG/PNG)
-export const MAX_FILE_BYTES = DEFAULT_SETTINGS.attachments.maxFileMB * 1024 * 1024;
 
 export type LeaveFile = { name: string; path: string; url: string };
 

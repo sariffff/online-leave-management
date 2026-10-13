@@ -19,7 +19,7 @@ export const ROLE_HOME: Record<RoleName, string> = {
 };
 
 /** ชื่อบทบาทภาษาไทยสำหรับแสดงผล */
-export const ROLE_LABEL: Record<RoleName, string> = {
+const ROLE_LABEL: Record<RoleName, string> = {
   admin: "ผู้ดูแลระบบ",
   user: "บุคลากร",
   supervisor: "ธุรการ",

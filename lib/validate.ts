@@ -18,7 +18,7 @@ export function toInt(v: unknown, fallback: number, min = 1, max = Number.MAX_SA
 }
 
 /** ไม่เกินช่วงของคอลัมน์ integer ใน Postgres */
-export const PG_INT_MAX = 2_147_483_647;
+const PG_INT_MAX = 2_147_483_647;
 
 export function toPosInt(v: unknown): number | null {
   const n = Number(v);

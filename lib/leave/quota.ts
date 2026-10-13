@@ -29,12 +29,6 @@ export function invalidateLeaveTypes() {
   typesCache = null;
 }
 
-export async function getLeaveType(id: number): Promise<LeaveTypeRow> {
-  const t = (await listLeaveTypes()).find((x) => x.leave_type_id === id);
-  if (!t) throw new HttpError(404, "LEAVETYPE_NOT_FOUND");
-  return t;
-}
-
 /* ---------------- คำนวณโควตา ---------------- */
 export type QuotaItem = {
   leave_type_id: number;

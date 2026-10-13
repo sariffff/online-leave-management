@@ -1,5 +1,5 @@
 // ปีงบไทย: 1 ต.ค. - 30 ก.ย.
-export const FISCAL_START_MONTH = 10; // ตุลาคม
+const FISCAL_START_MONTH = 10; // ตุลาคม
 
 /** สร้าง Date แบบไม่โดน timezone เล่นงาน (ใช้ UTC) จาก 'YYYY-MM-DD' */
 function dateOnlyUTC(iso: string): Date {
@@ -8,7 +8,7 @@ function dateOnlyUTC(iso: string): Date {
 }
 
 /** รับ Date → คืนปีงบ (เช่น 2025) */
-export function getFiscalYear(d: Date, startMonth = FISCAL_START_MONTH): number {
+function getFiscalYear(d: Date, startMonth = FISCAL_START_MONTH): number {
   const month = d.getUTCMonth() + 1; // 1..12
   const year = d.getUTCFullYear();
   return month >= startMonth ? year + 1 : year;

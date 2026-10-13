@@ -1,5 +1,5 @@
 // fetch ฝั่ง client แบบมี type และโยน ApiError เมื่อ response ไม่ ok
-export class ApiError extends Error {
+class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
@@ -36,7 +36,7 @@ export async function apiFetch<T = unknown>(url: string, opts: Opts = {}): Promi
 }
 
 /** ข้อความผิดพลาดที่ผู้ใช้อ่านเข้าใจ (รหัสจาก API → ภาษาไทย) */
-export const ERROR_TH: Record<string, string> = {
+const ERROR_TH: Record<string, string> = {
   UNAUTHORIZED: "กรุณาเข้าสู่ระบบใหม่",
   Unauthorized: "กรุณาเข้าสู่ระบบใหม่",
   Forbidden: "ไม่มีสิทธิ์ดำเนินการ",
