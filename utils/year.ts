@@ -34,12 +34,3 @@ export function getFiscalRange(fy: number, startMonth = FISCAL_START_MONTH) {
 export function isSameFiscalYear(startISO: string, endISO: string, startMonth = FISCAL_START_MONTH) {
   return getFiscalYearFromISO(startISO, startMonth) === getFiscalYearFromISO(endISO, startMonth);
 }
-
-/** ไม่ใช่ปีงบเดียวกัน ⇒ throw (ไว้กันเคสข้ามปีงบแบบ KISS) */
-export function assertSameFiscalYearOrThrow(startISO: string, endISO: string) {
-  if (!isSameFiscalYear(startISO, endISO)) {
-    const e = new Error("LEAVE_CROSSES_FISCAL_YEAR");
-    (e as any).status = 400;
-    throw e;
-  }
-}

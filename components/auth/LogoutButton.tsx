@@ -18,8 +18,8 @@ export default function LogoutButton() {
 
       // เสร็จแล้วพาไปหน้า login
       window.location.href = "/login";
-    } catch (err: any) {
-      alert("เกิดข้อผิดพลาดในการออกจากระบบ: " + (err?.message || "ไม่ทราบสาเหตุ"));
+    } catch (err) {
+      alert("เกิดข้อผิดพลาดในการออกจากระบบ: " + (err instanceof Error ? err.message : "ไม่ทราบสาเหตุ"));
     } finally {
       setLoading(false);
     }

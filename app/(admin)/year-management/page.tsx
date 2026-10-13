@@ -170,7 +170,7 @@ export default function GradeManagementPage() {
                     </td>
                   </tr>
                 ) : (
-                  visible.map((r, idx) => (
+                  visible.map((r) => (
                     <tr key={r.id} className="transition-colors hover:bg-gray-50">
                       <td className="px-4 py-2">
                         <span

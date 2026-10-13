@@ -1,45 +1,43 @@
 // middleware.ts
+// หน้าที่: (1) ต่ออายุ session ของ Supabase ทุก request (2) redirect ผู้ที่ยังไม่ login / ยังไม่เลือกบทบาท
+// การอนุญาตจริงตามบทบาทไม่ทำที่นี่ — layout (requireRole) และ API route (route([...])) ตรวจจาก DB ทุกครั้ง
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerRoute } from "@/lib/supabaseServer";
 
+const PUBLIC_PAGES = new Set(["/login"]);
+const NO_ROLE_NEEDED = ["/select-role", "/login", "/403"];
+
 export async function middleware(req: NextRequest) {
-  // สร้าง res ไว้ก่อน เพื่อให้ supabase สามารถ set-cookie ลง response นี้ได้
-  const res = NextResponse.next();
-  const supabase = createSupabaseServerRoute(req, res); // ✅ ต้องส่ง req,res
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
   const { pathname } = req.nextUrl;
-  const activeRole = req.cookies.get("active_role")?.value;
+  const res = NextResponse.next();
+  const supabase = createSupabaseServerRoute(req, res);
 
-  // 1) ยังไม่ล็อกอิน → ไป /login (ยกเว้นตัวมันเอง)
-  if (!user && pathname !== "/login") {
+  // getSession(): ตรวจวันหมดอายุจาก cookie และต่ออายุเมื่อจำเป็น โดยไม่ต้องยิงไป Auth server ทุกครั้ง
+  // (ใช้เพื่อเช็ค "มี session ไหม" เท่านั้น ไม่ใช้ตัดสินสิทธิ์)
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  const isApi = pathname.startsWith("/api/");
+
+  if (!session) {
+    if (PUBLIC_PAGES.has(pathname) || pathname === "/api/auth/logout") return res;
+    if (isApi) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  // 2) ล็อกอินแล้วแต่ยังไม่เลือก role → ไป /select-role (ยกเว้นตัวมันเอง)
-  if (user && !activeRole && pathname !== "/select-role") {
+  if (pathname === "/login") {
     return NextResponse.redirect(new URL("/select-role", req.url));
   }
 
-  // 3) (ทางเลือก/เพื่อ UX เท่านั้น) กันเข้า /admin ด้วย cookie เบื้องต้น
-  //    อย่าพึ่ง cookie สำหรับ authorize จริง — ให้ layout.tsx ใช้ requireRole แทน
-  if (pathname.startsWith("/admin") && activeRole !== "1") {
-    return NextResponse.redirect(new URL("/403", req.url));
+  const activeRole = req.cookies.get("active_role")?.value;
+  if (!isApi && !activeRole && !NO_ROLE_NEEDED.includes(pathname)) {
+    return NextResponse.redirect(new URL("/select-role", req.url));
   }
 
-  // คืน res เดิมที่ supabase ผูกไว้แล้ว (เผื่อมีการเขียนคุกกี้)
   return res;
 }
 
 export const config = {
-  matcher: [
-    "/admin/:path*",
-    "/supervisor/:path*",
-    "/director/:path*",
-    "/academic/:path*",
-    "/user/:path*",
-  ],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|fonts/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|ttf|woff2?)$).*)"],
 };

@@ -1,251 +1,134 @@
-// components/HeaderComponent.tsx
 "use client";
 
-import React, { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import useProfile from "@/hooks/useProfile";
+import toast from "react-hot-toast";
 import LogoutButton from "@/components/auth/LogoutButton";
+import { apiFetch } from "@/lib/client/api";
+import { fullName } from "@/lib/format";
 
-type ProfileForm = {
-  prename: string;
-  name: string;
-  surname: string;
-  tel: string;
-};
+type Me = { email: string | null; prename: string; name: string; surname: string; tel?: string };
+type InitialMe = { email: string | null; prename: string; name: string; surname: string } | null;
+type Form = { prename: string; name: string; surname: string; tel: string };
 
-export default function HeaderComponent() {
-  // UI state 
+export default function HeaderComponent({ initialMe }: { initialMe: InitialMe }) {
+  const [me, setMe] = useState<Me | null>(initialMe);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState<ProfileForm>({
-    prename: "",
-    name: "",
-    surname: "",
-    tel: "",
-  });
+  const [form, setForm] = useState<Form>({ prename: "", name: "", surname: "", tel: "" });
 
-  // Session/profile
-  const { userInfo, loading } = useProfile();
+  // layout ฝั่งเซิร์ฟเวอร์ render ใหม่ (เช่น หลัง login/เปลี่ยนบทบาท) → ใช้ข้อมูลล่าสุด
+  useEffect(() => setMe(initialMe), [initialMe]);
 
-  // ชื่อที่แสดง
-  const displayName = useMemo(() => {
-    if (!userInfo) return "";
-    const fn = `${userInfo.prename ?? ""}${userInfo.name ?? ""} ${userInfo.surname ?? ""}`
-      .replace(/\s+/g, " ")
-      .trim();
-    return fn || userInfo.email || "โปรไฟล์";
-  }, [userInfo]);
+  const displayName = me ? fullName(me) || me.email || "โปรไฟล์" : "";
 
-  // เปิดโมดอลโปรไฟล์ + เติมค่าเริ่มต้น
-  function openProfile() {
-    if (userInfo) {
-      setForm({
-        prename: userInfo.prename ?? "",
-        name: userInfo.name ?? "",
-        surname: userInfo.surname ?? "",
-        tel: (userInfo as any).tel ?? "",
-      });
-    }
+  async function openProfile() {
     setIsEditing(false);
     setProfileOpen(true);
     setDropdownOpen(false);
+    if (!me) return;
+    setForm({ prename: me.prename, name: me.name, surname: me.surname, tel: me.tel ?? "" });
+    // เบอร์โทรอยู่ใน Supabase Auth — โหลดเฉพาะตอนเปิดหน้าข้อมูลส่วนตัว
+    if (me.tel === undefined) {
+      try {
+        const full = await apiFetch<Me>("/api/me");
+        setMe((m) => (m ? { ...m, tel: full.tel ?? "" } : m));
+        setForm((f) => ({ ...f, tel: full.tel ?? "" }));
+      } catch {
+        /* แสดงเบอร์ว่างไว้ */
+      }
+    }
   }
 
-  // บันทึกโปรไฟล์ผ่าน API ของเรา (ไม่อัปเดต DB ตรง ๆ จาก client)
   async function saveProfile() {
-    if (!userInfo) return;
+    setSaving(true);
     try {
-      setSaving(true);
-      const res = await fetch("/api/user/profile", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prename: form.prename.trim(),
-          name: form.name.trim(),
-          surname: form.surname.trim(),
-          tel: form.tel.trim(),
-        }),
-      });
-      const out = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(out?.message || "บันทึกไม่สำเร็จ");
-
-      // อัปเดตหน้าจอแบบง่าย ๆ: sync ค่าในหน่วยความจำ
-      (userInfo as any).prename = form.prename;
-      (userInfo as any).name = form.name;
-      (userInfo as any).surname = form.surname;
-      (userInfo as any).tel = form.tel;
-
+      await apiFetch("/api/me", { method: "PATCH", json: form });
+      setMe((m) => (m ? { ...m, ...form } : m));
       setIsEditing(false);
+      toast.success("บันทึกเรียบร้อย");
     } catch (e) {
-      console.error("[saveProfile] error:", e);
-      alert("บันทึกไม่สำเร็จ");
+      toast.error(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
     } finally {
       setSaving(false);
     }
   }
 
-  return (
-    <header className="bg-blue-500 p-4 flex justify-between items-center relative">
-      <h1 className="text-lg md:text-xl font-bold text-white">
-        ระบบการลาของบุคลากร โรงเรียนบ้านตาสา
-      </h1>
+  const field = (key: keyof Form, label: string) => (
+    <label className="grid gap-1">
+      <span>{label}</span>
+      <input className="w-full p-2 border rounded-md" value={form[key]} onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))} />
+    </label>
+  );
 
-      {loading ? (
-        <div className="text-white/90">Loading...</div>
-      ) : userInfo ? (
+  return (
+    <header className="relative flex items-center justify-between p-4 bg-blue-500">
+      <h1 className="text-lg font-bold text-white md:text-xl">ระบบการลาของบุคลากร โรงเรียนบ้านตาสา</h1>
+
+      {me ? (
         <div className="relative">
-          {/* ชื่อผู้ใช้ (เปิด/ปิด dropdown) */}
-          <button
-            onClick={() => setDropdownOpen((v) => !v)}
-            className="text-white font-medium"
-          >
+          <button onClick={() => setDropdownOpen((v) => !v)} className="font-medium text-white">
             {displayName}
           </button>
 
-          {/* Dropdown */}
           {dropdownOpen && (
-            <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-lg p-2">
-              <button
-                onClick={openProfile}
-                className="w-full text-left px-3 py-2 rounded-md hover:bg-gray-100 text-sm"
-              >
+            <div className="absolute right-0 z-50 w-64 p-2 mt-2 bg-white shadow-lg rounded-xl">
+              <button onClick={openProfile} className="w-full px-3 py-2 text-sm text-left rounded-md hover:bg-gray-100">
                 ข้อมูลส่วนตัว
               </button>
-
-              {/* สลับบทบาท: ใช้หน้า select-role + cookie active_role (มาตรฐานระบบ) */}
-              <Link
-                href="/select-role"
-                className="block w-full px-3 py-2 rounded-md hover:bg-gray-100 text-sm"
-                onClick={() => setDropdownOpen(false)}
-              >
+              <Link href="/select-role" className="block w-full px-3 py-2 text-sm rounded-md hover:bg-gray-100" onClick={() => setDropdownOpen(false)}>
                 สลับบทบาท
               </Link>
-
-              <div className="border-t my-1" />
-
+              <div className="my-1 border-t" />
               <div className="px-2 py-1">
                 <LogoutButton />
               </div>
             </div>
           )}
 
-          {/* Modal โปรไฟล์ (พื้นฐาน) */}
           {profileOpen && (
-            <div
-              className="fixed inset-0 z-50 flex items-center justify-center"
-              aria-modal="true"
-              role="dialog"
-              onClick={() => setProfileOpen(false)}
-            >
+            <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" onClick={() => setProfileOpen(false)}>
               <div className="absolute inset-0 bg-black/40" />
-              <div
-                className="relative w-full max-w-3xl bg-white rounded-2xl shadow-2xl p-6"
-                onClick={(e) => e.stopPropagation()}
-              >
+              <div className="relative w-full max-w-xl p-6 bg-white shadow-2xl rounded-2xl" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-semibold">ข้อมูลส่วนตัว</h2>
-                  <div className="flex gap-2 items-center">
+                  <div className="flex items-center gap-2">
                     {!isEditing ? (
-                      <button
-                        onClick={() => setIsEditing(true)}
-                        className="border rounded-md px-3 py-1.5 text-sm hover:bg-gray-50"
-                      >
+                      <button onClick={() => setIsEditing(true)} className="border rounded-md px-3 py-1.5 text-sm hover:bg-gray-50">
                         แก้ไข
                       </button>
                     ) : (
                       <>
-                        <button
-                          onClick={() => setIsEditing(false)}
-                          className="border rounded-md px-3 py-1.5 text-sm hover:bg-gray-50"
-                          disabled={saving}
-                        >
+                        <button onClick={() => setIsEditing(false)} disabled={saving} className="border rounded-md px-3 py-1.5 text-sm hover:bg-gray-50">
                           ยกเลิก
                         </button>
-                        <button
-                          onClick={saveProfile}
-                          className="bg-blue-600 text-white rounded-md px-3 py-1.5 text-sm hover:bg-blue-700 disabled:opacity-60"
-                          disabled={saving}
-                        >
+                        <button onClick={saveProfile} disabled={saving} className="bg-blue-600 text-white rounded-md px-3 py-1.5 text-sm hover:bg-blue-700 disabled:opacity-60">
                           {saving ? "กำลังบันทึก..." : "บันทึก"}
                         </button>
                       </>
                     )}
-                    <button
-                      onClick={() => setProfileOpen(false)}
-                      className="rounded-md px-3 py-1.5 text-sm hover:bg-gray-100"
-                      aria-label="ปิด"
-                    >
+                    <button onClick={() => setProfileOpen(false)} className="rounded-md px-3 py-1.5 text-sm hover:bg-gray-100" aria-label="ปิด">
                       ✕
                     </button>
                   </div>
                 </div>
 
-                {/* เนื้อหาโปรไฟล์ */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {!isEditing ? (
-                    <div className="space-y-2 text-sm">
-                      <div>
-                        <span className="font-medium">ชื่อ–สกุล: </span>
-                        {displayName || "-"}
-                      </div>
-                      <div>
-                        <span className="font-medium">อีเมล: </span>
-                        {userInfo.email || "-"}
-                      </div>
-                      {"tel" in userInfo && (
-                        <div>
-                          <span className="font-medium">เบอร์โทร: </span>
-                          {(userInfo as any).tel || "-"}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="grid gap-3 text-sm">
-                      <label className="grid gap-1">
-                        <span>คำนำหน้า</span>
-                        <input
-                          className="w-full border rounded-md p-2"
-                          value={form.prename}
-                          onChange={(e) =>
-                            setForm((f) => ({ ...f, prename: e.target.value }))
-                          }
-                        />
-                      </label>
-                      <label className="grid gap-1">
-                        <span>ชื่อ</span>
-                        <input
-                          className="w-full border rounded-md p-2"
-                          value={form.name}
-                          onChange={(e) =>
-                            setForm((f) => ({ ...f, name: e.target.value }))
-                          }
-                        />
-                      </label>
-                      <label className="grid gap-1">
-                        <span>สกุล</span>
-                        <input
-                          className="w-full border rounded-md p-2"
-                          value={form.surname}
-                          onChange={(e) =>
-                            setForm((f) => ({ ...f, surname: e.target.value }))
-                          }
-                        />
-                      </label>
-                      <label className="grid gap-1">
-                        <span>เบอร์โทร</span>
-                        <input
-                          className="w-full border rounded-md p-2"
-                          value={form.tel}
-                          onChange={(e) =>
-                            setForm((f) => ({ ...f, tel: e.target.value }))
-                          }
-                        />
-                      </label>
-                    </div>
-                  )}
-                </div>
+                {!isEditing ? (
+                  <div className="space-y-2 text-sm">
+                    <div><span className="font-medium">ชื่อ–สกุล: </span>{displayName || "-"}</div>
+                    <div><span className="font-medium">อีเมล: </span>{me.email || "-"}</div>
+                    <div><span className="font-medium">เบอร์โทร: </span>{me.tel || "-"}</div>
+                  </div>
+                ) : (
+                  <div className="grid gap-3 text-sm">
+                    {field("prename", "คำนำหน้า")}
+                    {field("name", "ชื่อ")}
+                    {field("surname", "สกุล")}
+                    {field("tel", "เบอร์โทร")}
+                  </div>
+                )}
               </div>
             </div>
           )}

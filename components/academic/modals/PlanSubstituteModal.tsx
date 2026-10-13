@@ -1,409 +1,230 @@
-// components/academic/modals/PlanSubstituteModal.tsx
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog";
+import { Fragment, useCallback, useEffect, useState } from "react";
+import toast from "react-hot-toast";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import AssignSubstituteModal from "@/components/academic/modals/AssignSubstituteModal";
+import AssignSubstituteModal, { type AssignContext } from "@/components/academic/modals/AssignSubstituteModal";
+import type { LeaveItem } from "@/components/shared/types";
+import { apiFetch } from "@/lib/client/api";
+import { thaiDate } from "@/lib/format";
 
-type DaySlot = {
+type Slot = {
+  teachingScheduleId: number;
   period: number;
   time: string;
-  subject?: string;
-  room?: string;
-  teachingScheduleId?: number | string | null;
-  hasSubstitute?: boolean | null;
+  subject: string;
+  room: string;
+  substituteUserId: string | null;
+  substituteName: string | null;
 };
-type DaySchedule = { date: string; weekdayLabel?: string; slots: DaySlot[] };
+type Day = { date: string; weekday: number | null; slots: Slot[] };
+type Detail = {
+  leave: LeaveItem;
+  isTeacher: boolean;
+  subjectGroupId: number | null;
+  schedule: Day[];
+  progress: { required: number; assigned: number; complete: boolean; missing: { date: string; tsId: number; period: number }[] };
+};
 
-type Props = {
+const WEEKDAY = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
+const weekdayOf = (iso: string) => WEEKDAY[new Date(`${iso}T00:00:00Z`).getUTCDay()];
+
+/** วางแผนสอนแทนทุกคาบในช่วงลา — โหลดข้อมูลทั้งหมดจาก endpoint เดียว */
+export default function PlanSubstituteModal({
+  open,
+  onOpenChange,
+  leaveId,
+  onChanged,
+}: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   leaveId: string;
-  teacherName: string;
-  subjectGroup?: string;
-  dateRange: { start: string; end: string };
-};
-
-function thaiFullDate(iso: string) {
-  const d = new Date(iso + "T00:00:00");
-  const month = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
-  const weekday = ["อาทิตย์","จันทร์","อังคาร","พุธ","พฤหัสบดี","ศุกร์","เสาร์"];
-  return { label: `${d.getDate()} ${month[d.getMonth()]} พ.ศ. ${d.getFullYear() + 543}`, weekday: weekday[d.getDay()] };
-}
-
-const fallbackTime: Record<number, string> = {
-  1: "08:00 - 09:00 น.",
-  2: "09:00 - 10:00 น.",
-  3: "10:00 - 11:00 น.",
-  4: "11:00 - 12:00 น.",
-  5: "13:00 - 14:00 น.",
-  6: "14:00 - 15:00 น.",
-  7: "15:00 - 16:00 น.",
-};
-
-export default function PlanSubstituteModal({
-  open, onOpenChange, leaveId, teacherName, subjectGroup, dateRange,
-}: Props) {
-  const [days, setDays] = useState<DaySchedule[]>([]);
+  onChanged?: () => void;
+}) {
+  const [detail, setDetail] = useState<Detail | null>(null);
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [picking, setPicking] = useState<AssignContext | null>(null);
+  const [finishing, setFinishing] = useState(false);
 
-  const [takenMap, setTakenMap] = useState<Map<string, { name?: string | null }>>(new Map());
-  const [missing, setMissing] = useState<Array<{ date: string; tsId: number; period?: number | null }>>([]);
-
-  const [pickOpen, setPickOpen] = useState(false);
-  const [pickContext, setPickContext] = useState<{ date: string; slot: DaySlot } | null>(null);
-
-  const [assignments, setAssignments] = useState<Record<string, { primary?: string; cross?: string }>>({});
-
-  const keyOf = (dateISO: string, period: number) => `${dateISO}-${period}`;
-  const keyTaken = (dateISO: string, teachingScheduleId?: number | string | null) =>
-    `${dateISO}|${teachingScheduleId ?? ""}`;
-  const keyTakenFallback = (dateISO: string, period: number) => `${dateISO}#p${period}`;
-
-  const titleRange = useMemo(() => {
-    const s = thaiFullDate(dateRange.start).label;
-    const e = thaiFullDate(dateRange.end).label;
-    return dateRange.start === dateRange.end ? s : `${s} - ${e}`;
-  }, [dateRange.start, dateRange.end]);
-
-  const isFullyCovered = useMemo(() => {
-    if (!days.length) return false;
-    for (const d of days) {
-      for (const s of d.slots || []) {
-        const k1 = keyTaken(d.date, s.teachingScheduleId);
-        const k2 = keyTakenFallback(d.date, s.period);
-        if (!(takenMap.has(k1) || takenMap.has(k2))) return false;
-      }
-    }
-    return true;
-  }, [days, takenMap]);
-
-  // โหลดตารางและสถานะที่ถูกมอบหมาย (รวมทั้งดึง missing จาก complete API)
-  useEffect(() => {
-    if (!open || !leaveId) return;
-    const controller = new AbortController();
-
-    (async () => {
+  const load = useCallback(
+    async (signal?: AbortSignal) => {
+      setLoading(true);
+      setError(null);
       try {
-        setLoading(true); setErr(null); setMissing([]);
-
-        // 1) ตารางคาบของผู้ลา
-        const qs = new URLSearchParams({ start: dateRange.start, end: dateRange.end });
-        const url = `/api/academic/leaves/${leaveId}?` + qs.toString();
-        const res = await fetch(url, { cache: "no-store", signal: controller.signal });
-        const j: any = await res.json();
-        if (!res.ok || j?.error) throw new Error(j?.error || "โหลดตารางไม่สำเร็จ");
-
-        const sch = Array.isArray(j.schedule) ? j.schedule : [];
-        const normalized: DaySchedule[] = sch.map((d: any) => ({
-          date: d.date,
-          slots: (d.slots || []).map((s: any) => {
-            const subject =
-              s.subject ?? s.subjectName ?? s.subject_title ?? (s.subjectId ? `วิชา #${s.subjectId}` : "-");
-
-            const room =
-              s.room ?? s.classroomName ?? (s.classroomId ? `ห้อง #${s.classroomId}` : "-");
-
-            const pd = Number(s.period);
-            const time = s.time || fallbackTime[pd] || "";
-
-            return {
-              period: pd,
-              time,
-              subject,
-              room,
-              teachingScheduleId: s.teachingScheduleId ?? s.teaching_schedule_id ?? null,
-              hasSubstitute: s.hasSubstitute ?? s.has_substitute ?? null,
-            } as DaySlot;
-          }),
-        }));
-        setDays(normalized);
-
-        // 2) เรียก complete(GET) เพื่อรู้ว่า missing อะไรบ้าง
-        try {
-          const rC = await fetch(`/api/academic/leaves/${leaveId}/complete`, { cache: "no-store", signal: controller.signal });
-          const jC = await rC.json();
-          if (rC.ok && jC?.details?.missing) setMissing(jC.details.missing as typeof missing);
-        } catch {}
-
-        // 3) สร้าง takenMap จาก substitutions endpoint ถ้ามี
-        const tsIds = Array.from(
-          new Set(
-            normalized
-              .flatMap((d) => d.slots)
-              .map((s) => s.teachingScheduleId)
-              .filter((v) => v !== null && v !== undefined)
-          )
-        ) as Array<number | string>;
-        const tsCsv = tsIds.join(",");
-        const nextTaken = new Map<string, { name?: string | null }>();
-
-        try {
-          const qs2 = new URLSearchParams({ start: dateRange.start, end: dateRange.end });
-          if (tsCsv) qs2.set("ts", tsCsv);
-          const url2 = `/api/academic/substitutions?` + qs2.toString();
-          const r2 = await fetch(url2, { cache: "no-store", signal: controller.signal });
-          const j2 = await r2.json();
-          if (!r2.ok || j2?.error) throw new Error(j2?.error || "โหลดรายการสอนแทนไม่สำเร็จ");
-
-          const list: any[] = Array.isArray(j2.substitutions) ? j2.substitutions : [];
-          for (const row of list) {
-            const date = String(row.date);
-            const tsId = row.teaching_schedule_id ?? null;
-            if (tsId != null) nextTaken.set(keyTaken(date, tsId), { name: row.substitute_name || null });
-          }
-        } catch {
-          // ignore
-        }
-
-        // 4) fallback จาก flag hasSubstitute
-        for (const d of normalized) {
-          for (const s of d.slots || []) {
-            if (s.hasSubstitute) {
-              if (s.teachingScheduleId != null) nextTaken.set(keyTaken(d.date, s.teachingScheduleId), { name: null });
-              else nextTaken.set(keyTakenFallback(d.date, s.period), { name: null });
-            }
-          }
-        }
-
-        setTakenMap(nextTaken);
-      } catch (e: any) {
-        if (e?.name !== "AbortError") setErr(e?.message || "โหลดตารางไม่สำเร็จ");
-        setDays([]); setTakenMap(new Map()); setMissing([]);
+        setDetail(await apiFetch<Detail>(`/api/academic/leaves/${leaveId}`, { signal }));
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        setDetail(null);
+        setError(e instanceof Error ? e.message : "โหลดตารางไม่สำเร็จ");
       } finally {
         setLoading(false);
       }
-    })();
+    },
+    [leaveId]
+  );
 
-    return () => controller.abort();
-  }, [open, leaveId, dateRange.start, dateRange.end]);
+  useEffect(() => {
+    if (!open) return;
+    const ac = new AbortController();
+    load(ac.signal);
+    return () => ac.abort();
+  }, [open, load]);
+
+  async function finish() {
+    setFinishing(true);
+    try {
+      await apiFetch(`/api/academic/leaves/${leaveId}/complete`, { method: "PATCH" });
+      toast.success("ปิดงานสอนแทนเรียบร้อย");
+      onChanged?.();
+      onOpenChange(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "อัปเดตสถานะไม่สำเร็จ");
+    } finally {
+      setFinishing(false);
+    }
+  }
+
+  const leave = detail?.leave;
+  const progress = detail?.progress;
 
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-5xl max-h-[80vh] overflow-hidden">
-          <DialogHeader className="mb-2">
+        <DialogContent className="sm:max-w-5xl max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader>
             <DialogTitle className="flex flex-wrap items-center gap-2">
               <span>วางแผนสอนแทน:</span>
-              <span className="font-semibold">{teacherName}</span>
-              {subjectGroup && <Badge variant="secondary" className="ml-1">{subjectGroup}</Badge>}
+              <span className="font-semibold">{leave?.user.fullName ?? "..."}</span>
+              {leave && (
+                <Badge variant="secondary">
+                  {thaiDate(leave.startDate, true)}
+                  {leave.startDate !== leave.endDate ? ` - ${thaiDate(leave.endDate, true)}` : ""}
+                </Badge>
+              )}
             </DialogTitle>
           </DialogHeader>
 
-          <div className="mb-3 text-sm text-muted-foreground">
-            ช่วงวันที่: <span className="font-medium">{titleRange}</span>
-          </div>
-
-          <div className="rounded-md border overflow-hidden h-[calc(80vh-12rem)]">
-            <div className="w-full h-full overflow-auto">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 z-10 bg-muted">
+          <div className="flex-1 overflow-auto border rounded-md">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 z-10 bg-muted">
+                <tr>
+                  <th className="px-3 py-2 text-left w-[24%] border-r">วันที่</th>
+                  <th className="px-3 py-2 text-left w-[8%]">คาบ</th>
+                  <th className="px-3 py-2 text-left w-[16%]">เวลา</th>
+                  <th className="px-3 py-2 text-left w-[18%]">วิชา</th>
+                  <th className="px-3 py-2 text-left w-[10%]">ห้อง</th>
+                  <th className="px-3 py-2 text-left">ครูสอนแทน</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading && (
                   <tr>
-                    <th className="px-3 py-2 text-left w-[26%] border-r">วันที่</th>
-                    <th className="px-3 py-2 text-left w-[8%]">คาบ</th>
-                    <th className="px-3 py-2 text-left w-[20%]">เวลา</th>
-                    <th className="px-3 py-2 text-left w-[22%]">วิชา</th>
-                    <th className="px-3 py-2 text-left w-[12%]">ห้อง</th>
-                    <th className="px-3 py-2 text-left w-[12%]">การกระทำ</th>
+                    <td colSpan={6} className="py-6 text-center text-muted-foreground">กำลังโหลดตาราง...</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {loading && (
-                    <tr><td colSpan={6} className="py-6 text-center text-muted-foreground">กำลังโหลดตาราง...</td></tr>
-                  )}
-
-                  {!loading && err && (
-                    <tr><td colSpan={6} className="py-6 text-center text-red-600">{err}</td></tr>
-                  )}
-
-                  {!loading && !err && days.map((d, dayIdx) => {
-                    const { label, weekday } = thaiFullDate(d.date);
-                    const slots = d.slots?.length ? d.slots : [];
-                    return (
-                      <React.Fragment key={d.date}>
-                        {dayIdx > 0 && (<tr className="bg-muted/60"><td colSpan={6} className="h-2 border-y" /></tr>)}
-
-                        {slots.length > 0 ? (
-                          slots.map((s, idx) => {
-                            const keyPrimary   = keyTaken(d.date, s.teachingScheduleId);
-                            const keyFallback  = keyTakenFallback(d.date, s.period);
-                            const already      = takenMap.get(keyPrimary) || takenMap.get(keyFallback);
-                            const assigned     = assignments[keyOf(d.date, s.period)];
-
-                            return (
-                              <tr key={`${d.date}-${s.period}`} className="align-top hover:bg-muted/20">
-                                <td className="px-3 py-2 border-r bg-muted/5">
-                                  {idx === 0 ? (
-                                    <div>
-                                      <div className="font-semibold">{label}</div>
-                                      <div className="text-xs text-muted-foreground mt-0.5">วัน{weekday}</div>
-                                    </div>
-                                  ) : null}
-                                </td>
-                                <td className="px-3 py-2">คาบ {s.period}</td>
-                                <td className="px-3 py-2">{s.time}</td>
-                                <td className="px-3 py-2">{s.subject ?? "-"}</td>
-                                <td className="px-3 py-2">{s.room ?? "-"}</td>
-                                <td className="px-3 py-2">
-                                  <div className="flex flex-col gap-1">
-                                    <div className="flex items-center gap-2">
-                                      <Button
-                                        size="sm"
-                                        style={{ backgroundColor: "#2563eb", color: "white" }}
-                                        onClick={() => { setPickContext({ date: d.date, slot: s }); setPickOpen(true); }}
-                                        disabled={!!already}
-                                        title={already ? "มีการสอนแทนแล้ว" : undefined}
-                                      >
-                                        {already ? "ถูกมอบหมายแล้ว" : (assigned ? "แก้ไข" : "เลือกครูสอนแทน")}
-                                      </Button>
-
-                                      {already && (
-                                        <Badge variant="outline" className="border-amber-300 text-amber-700">
-                                          โดย {already.name || "—"}
-                                        </Badge>
-                                      )}
-                                      {!already && assigned && <Badge variant="secondary">เลือกแล้ว</Badge>}
-                                    </div>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })
-                        ) : (
-                          <tr className="hover:bg-muted/20">
-                            <td className="px-3 py-4 border-r bg-muted/5">
-                              <div>
-                                <div className="font-semibold">{label}</div>
-                                <div className="text-xs text-muted-foreground mt-0.5">วัน{weekday}</div>
-                              </div>
+                )}
+                {!loading && error && (
+                  <tr>
+                    <td colSpan={6} className="py-6 text-center text-red-600">{error}</td>
+                  </tr>
+                )}
+                {!loading && detail && !detail.isTeacher && (
+                  <tr>
+                    <td colSpan={6} className="py-6 text-center text-muted-foreground">ผู้ลาไม่ได้เป็นครู จึงไม่มีตารางสอน</td>
+                  </tr>
+                )}
+                {!loading &&
+                  detail?.isTeacher &&
+                  detail.schedule.map((d, di) => (
+                    <Fragment key={d.date}>
+                      {di > 0 && (
+                        <tr className="bg-muted/60">
+                          <td colSpan={6} className="h-2 border-y" />
+                        </tr>
+                      )}
+                      {d.slots.length === 0 ? (
+                        <tr className="hover:bg-muted/20">
+                          <td className="px-3 py-3 border-r bg-muted/5">
+                            <div className="font-semibold">{thaiDate(d.date)}</div>
+                            <div className="text-xs text-muted-foreground">วัน{weekdayOf(d.date)}</div>
+                          </td>
+                          <td colSpan={5} className="px-3 py-3 text-muted-foreground">
+                            {d.weekday === null ? "วันหยุดสุดสัปดาห์" : "ไม่มีคาบเรียนที่เกี่ยวข้อง"}
+                          </td>
+                        </tr>
+                      ) : (
+                        d.slots.map((s, si) => (
+                          <tr key={s.teachingScheduleId} className="align-top hover:bg-muted/20">
+                            <td className="px-3 py-2 border-r bg-muted/5">
+                              {si === 0 && (
+                                <>
+                                  <div className="font-semibold">{thaiDate(d.date)}</div>
+                                  <div className="text-xs text-muted-foreground">วัน{weekdayOf(d.date)}</div>
+                                </>
+                              )}
                             </td>
-                            <td colSpan={5} className="px-3 py-4 text-muted-foreground">ไม่มีคาบเรียนที่เกี่ยวข้อง</td>
+                            <td className="px-3 py-2">คาบ {s.period}</td>
+                            <td className="px-3 py-2">{s.time}</td>
+                            <td className="px-3 py-2">{s.subject}</td>
+                            <td className="px-3 py-2">{s.room}</td>
+                            <td className="px-3 py-2">
+                              {s.substituteUserId ? (
+                                <Badge variant="outline" className="border-green-300 text-green-700">
+                                  {s.substituteName || "—"}
+                                </Badge>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  className="text-white bg-blue-600 hover:bg-blue-700"
+                                  onClick={() => setPicking({ dateISO: d.date, period: s.period, teachingScheduleId: s.teachingScheduleId })}
+                                >
+                                  เลือกครูสอนแทน
+                                </Button>
+                              )}
+                            </td>
                           </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                        ))
+                      )}
+                    </Fragment>
+                  ))}
+              </tbody>
+            </table>
           </div>
 
-          <DialogFooter className="flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-3">
-            <div className="w-full sm:w-auto">
-              {isFullyCovered ? (
-                <div className="text-green-600">✓ มอบหมายครบทุกคาบแล้ว</div>
-              ) : (
-                <div className="text-amber-700">
-                  ยังมอบหมายไม่ครบ
-                  {missing.length > 0 && (
-                    <div className="mt-2 text-xs text-muted-foreground">
-                      คาบที่ยังขาด:
-                      <ul className="list-disc pl-5 mt-1 space-y-0.5">
-                        {missing.slice(0, 6).map((m, i) => (
-                          <li key={`${m.date}-${m.tsId}-${i}`}>
-                            {m.date} — tsId:{m.tsId}{typeof m.period === "number" ? ` (คาบ ${m.period})` : ""}
-                          </li>
-                        ))}
-                        {missing.length > 6 && <li>… และอีก {missing.length - 6} คาบ</li>}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              )}
+          <DialogFooter className="flex-col gap-3 pt-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm">
+              {progress && progress.required > 0 ? (
+                progress.complete ? (
+                  <span className="text-green-600">✓ มอบหมายครบทุกคาบแล้ว ({progress.assigned}/{progress.required})</span>
+                ) : (
+                  <span className="text-amber-700">
+                    มอบหมายแล้ว {progress.assigned}/{progress.required} คาบ — ยังขาด {progress.missing.length} คาบ
+                  </span>
+                )
+              ) : null}
             </div>
-
-            <div className="flex gap-2 w-full sm:w-auto justify-end">
-              {isFullyCovered && (
-                <Button
-                  style={{ backgroundColor: "#16a34a", color: "white" }}
-                  onClick={async () => {
-                    try {
-                      const res = await fetch(`/api/academic/leaves/${leaveId}/complete`, {
-                        method: "PATCH",
-                        headers: { "Content-Type": "application/json" },
-                        cache: "no-store",
-                      });
-                      const j = await res.json();
-                      if (!res.ok || j?.error) {
-                        throw new Error(j?.error || j?.detail || "อัปเดตสถานะไม่สำเร็จ");
-                      }
-                      alert("อัปเดตสถานะใบลาเป็น 'covered' แล้ว");
-                      onOpenChange(false);
-                    } catch (e: any) {
-                      alert(e?.message || "อัปเดตสถานะไม่สำเร็จ");
-                    }
-                  }}
-                  title="อัปเดตสถานะใบลาเป็น covered เมื่อมอบหมายครบทุกคาบ"
-                >
-                  ✓ เสร็จสิ้น
+            <div className="flex justify-end gap-2">
+              {leave?.status_code === "approved" && progress?.complete && progress.required > 0 && (
+                <Button onClick={finish} disabled={finishing} className="text-white bg-green-600 hover:bg-green-700">
+                  {finishing ? "กำลังบันทึก..." : "✓ เสร็จสิ้น"}
                 </Button>
               )}
-
-              <Button
-                style={{ backgroundColor: "oklch(62.7% 0.194 149.214)", color: "white" }}
-                onClick={() => onOpenChange(false)}
-              >
-                ปิด
-              </Button>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>ปิด</Button>
             </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {pickContext && (
+      {picking && leave && (
         <AssignSubstituteModal
-          open={pickOpen}
-          onOpenChange={setPickOpen}
-          subjectGroupOfLeaver={subjectGroup ?? ""}
-          context={{ period: pickContext.slot.period, dateISO: pickContext.date }}
-          onAssign={async ({ period, date, primaryTeacherId, crossGroupTeacherId }) => {
-            const chosenUserId = primaryTeacherId || crossGroupTeacherId;
-            const tsId = pickContext.slot.teachingScheduleId;
-            if (!chosenUserId) { alert("ยังไม่ได้เลือกครูสอนแทน"); return; }
-
-            try {
-              const res = await fetch("/api/academic/substitutions", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                cache: "no-store",
-                body: JSON.stringify({
-                  teachingScheduleId: tsId,
-                  dateISO: date,
-                  substituteUserId: chosenUserId,
-                }),
-              });
-              const j = await res.json();
-
-              if (res.status === 409) {
-                setTakenMap(prev => {
-                  const next = new Map(prev);
-                  if (tsId != null) next.set(keyTaken(date, tsId), { name: null });
-                  else next.set(keyTakenFallback(date, period), { name: null });
-                  return next;
-                });
-                alert("คาบนี้มีการมอบหมายแล้ว");
-              } else if (!res.ok || j?.error) {
-                throw new Error(j?.detail || j?.error || "บันทึกไม่สำเร็จ");
-              } else {
-                setTakenMap(prev => {
-                  const next = new Map(prev);
-                  if (tsId != null) next.set(keyTaken(date, tsId), { name: null });
-                  else next.set(keyTakenFallback(date, period), { name: null });
-                  return next;
-                });
-              }
-
-              setAssignments(prev => ({ ...prev, [keyOf(date, period)]: { primary: primaryTeacherId, cross: crossGroupTeacherId } }));
-              setPickOpen(false);
-            } catch (e: any) {
-              alert(e?.message || "บันทึกไม่สำเร็จ");
-            }
-          }}
+          open
+          onOpenChange={(v) => !v && setPicking(null)}
+          context={picking}
+          subjectGroupId={detail?.subjectGroupId ?? null}
+          leaverUserId={leave.userId}
+          onAssigned={() => load()}
         />
       )}
     </>

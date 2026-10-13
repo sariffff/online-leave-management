@@ -40,3 +40,23 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# secrets / credentials (ห้าม commit)
+.service-account-key.json
+*service-account*.json
+*credentials*.json
+*.key
+*.p12
+!.env.example
+
+# tooling / local
+*.log
+.idea/
+.vscode/*
+!.vscode/extensions.json
+supabase/.temp/
+supabase/.branches/
+.turbo/
+
+# ผลรันเทส E2E (มี id ข้อมูลจริง — ไม่ commit)
+tests/e2e/last-run.json
